@@ -1,87 +1,156 @@
 import React, { useState, useEffect } from "react";
+import {
+  collection,
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+  serverTimestamp,
+} from "firebase/firestore";
+import { db } from "./firebase";
 import Home from "./Home";
 import "./Home.css";
+
+// Ảnh đại diện mặc định
+const DEFAULT_AVATAR = "https://api.dicebear.com/7.x/adventurer/svg?seed=LoveMatch";
+
+// Chuyển đổi email thành ID an toàn trên Firestore
+const emailToDocId = (email) => email.trim().toLowerCase().replace(/[^a-z0-9]/g, "_");
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [isRegister, setIsRegister] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  // State biểu mẫu đăng nhập / đăng ký
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [avatarUrl, setAvatarUrl] = useState("");
+  const [avatarData, setAvatarData] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
 
-  // Kiểm tra trạng thái đăng nhập khi tải trang
+  // Khôi phục phiên đăng nhập khi tải lại trang
   useEffect(() => {
-    const savedUser = localStorage.getItem("lovematch_current_user");
-    if (savedUser) {
+    const saved = localStorage.getItem("lovematch_current_user");
+    if (saved) {
       try {
-        setCurrentUser(JSON.parse(savedUser));
-      } catch (e) {
+        setCurrentUser(JSON.parse(saved));
+      } catch {
         localStorage.removeItem("lovematch_current_user");
       }
     }
   }, []);
 
-  // Xử lý chọn ảnh đại diện từ máy khi đăng ký
-  const handleAvatarFile = (e) => {
+  // Nén ảnh chọn từ máy để lưu mượt lên Firestore (< 1MB)
+  const compressImage = (file, maxWidth = 500) =>
+    new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          const scale = Math.min(1, maxWidth / img.width);
+          canvas.width = img.width * scale;
+          canvas.height = img.height * scale;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL("image/jpeg", 0.78));
+        };
+        img.src = event.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+
+  // Chọn ảnh đại diện trực tiếp từ máy khi đăng ký
+  const handleAvatarFile = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setAvatarUrl(reader.result);
-    };
-    reader.readAsDataURL(file);
+    const compressed = await compressImage(file, 300);
+    setAvatarData(compressed);
   };
 
-  // Xử lý Đăng ký / Đăng nhập
-  const handleAuthSubmit = (e) => {
+  // Xử lý Đăng ký & Đăng nhập trên Firebase Firestore
+  const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setErrorMsg("");
 
-    const usersList = JSON.parse(localStorage.getItem("lovematch_users") || "[]");
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !password.trim() || (isRegister && !name.trim())) {
+      setErrorMsg("Vui lòng nhập đầy đủ thông tin!");
+      return;
+    }
 
-    if (isRegister) {
-      // ĐĂNG KÝ TÀI KHOẢN MỚI
-      if (!name.trim() || !email.trim() || !password.trim()) {
-        setErrorMsg("Vui lòng nhập đầy đủ họ tên, email và mật khẩu.");
-        return;
-      }
-      const exists = usersList.some((u) => u.email.toLowerCase() === email.toLowerCase());
-      if (exists) {
-        setErrorMsg("Email này đã được đăng ký. Hãy chuyển sang Đăng nhập!");
-        return;
-      }
+    setLoading(true);
+    const userId = emailToDocId(cleanEmail);
+    const userRef = doc(db, "users", userId);
 
-      const newUser = {
-        id: "user_" + Date.now(),
-        name: name.trim(),
-        email: email.trim(),
-        password: password,
-        avatar: avatarUrl || `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(name)}`,
-      };
+    try {
+      const snap = await getDoc(userRef);
 
-      const updatedUsers = [...usersList, newUser];
-      localStorage.setItem("lovematch_users", JSON.stringify(updatedUsers));
-      localStorage.setItem("lovematch_current_user", JSON.stringify(newUser));
-      setCurrentUser(newUser);
-    } else {
-      // ĐĂNG NHẬP
-      const foundUser = usersList.find(
-        (u) => u.email.toLowerCase() === email.trim().toLowerCase() && u.password === password
-      );
-      if (!foundUser) {
-        setErrorMsg("Sai email hoặc mật khẩu! Nếu chưa có tài khoản, hãy bấm Đăng ký.");
-        return;
+      if (isRegister) {
+        if (snap.exists()) {
+          setErrorMsg("Email này đã có người đăng ký. Hãy chuyển sang Đăng nhập!");
+          setLoading(false);
+          return;
+        }
+
+        const newUser = {
+          id: userId,
+          name: name.trim(),
+          email: cleanEmail,
+          password: password,
+          avatar:
+            avatarData ||
+            `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(name.trim())}`,
+          bio: "Rất vui được làm quen với mọi người trên LoveMatch 💜",
+          location: "Đà Nẵng",
+          hobbies: "Cà phê, Nghe nhạc, Du lịch",
+          friends: [],
+          createdAt: serverTimestamp(),
+        };
+
+        await setDoc(userRef, newUser);
+        const userForSession = { ...newUser, createdAt: Date.now() };
+        localStorage.setItem("lovematch_current_user", JSON.stringify(userForSession));
+        setCurrentUser(userForSession);
+      } else {
+        if (!snap.exists()) {
+          setErrorMsg("Tài khoản chưa tồn tại. Bạn hãy bấm Đăng ký miễn phí nhé!");
+          setLoading(false);
+          return;
+        }
+        const data = snap.data();
+        if (data.password !== password) {
+          setErrorMsg("Mật khẩu chưa chính xác!");
+          setLoading(false);
+          return;
+        }
+        const userForSession = { id: snap.id, ...data };
+        localStorage.setItem("lovematch_current_user", JSON.stringify(userForSession));
+        setCurrentUser(userForSession);
       }
-      localStorage.setItem("lovematch_current_user", JSON.stringify(foundUser));
-      setCurrentUser(foundUser);
+    } catch (err) {
+      console.error("Lỗi xác thực Firebase:", err);
+      setErrorMsg("Lỗi kết nối máy chủ Firebase. Vui lòng thử lại!");
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Xử lý Đăng xuất
+  // Cập nhật thông tin trang cá nhân lên Firestore
+  const handleUpdateProfile = async (updatedFields) => {
+    if (!currentUser) return;
+    const updatedUser = { ...currentUser, ...updatedFields };
+    setCurrentUser(updatedUser);
+    localStorage.setItem("lovematch_current_user", JSON.stringify(updatedUser));
+
+    try {
+      await updateDoc(doc(db, "users", currentUser.id), updatedFields);
+    } catch (err) {
+      console.error("Lỗi cập nhật hồ sơ:", err);
+    }
+  };
+
+  // Đăng xuất
   const handleLogout = () => {
     localStorage.removeItem("lovematch_current_user");
     setCurrentUser(null);
@@ -89,18 +158,25 @@ export default function App() {
     setPassword("");
   };
 
-  // Nếu đã đăng nhập -> Hiển thị Trang chủ Bảng tin Hẹn hò
   if (currentUser) {
-    return <Home currentUser={currentUser} onLogout={handleLogout} />;
+    return (
+      <Home
+        currentUser={currentUser}
+        onLogout={handleLogout}
+        onUpdateProfile={handleUpdateProfile}
+        compressImage={compressImage}
+      />
+    );
   }
 
-  // Nếu chưa đăng nhập -> Hiển thị màn hình Đăng nhập / Đăng ký Tím Pastel
   return (
     <div className="auth-wrapper">
       <div className="auth-card">
         <div className="auth-logo">💜 LoveMatch</div>
         <p className="auth-subtitle">
-          {isRegister ? "Tạo hồ sơ hẹn hò & kết nối ngay hôm nay" : "Đăng nhập để xem bảng tin & trò chuyện"}
+          {isRegister
+            ? "Tạo hồ sơ hẹn hò & kết nối cùng mọi người"
+            : "Đăng nhập để xem bảng tin & trò chuyện"}
         </p>
 
         {errorMsg && <div className="auth-error">{errorMsg}</div>}
@@ -115,7 +191,9 @@ export default function App() {
                 onChange={(e) => setName(e.target.value)}
               />
               <label className="avatar-upload-label">
-                <span>📷 {avatarUrl ? "Đã chọn ảnh đại diện" : "Chọn ảnh đại diện từ máy (tùy chọn)"}</span>
+                <span>
+                  📷 {avatarData ? "Đã chọn ảnh đại diện ✓" : "Chọn ảnh đại diện từ máy"}
+                </span>
                 <input type="file" accept="image/*" onChange={handleAvatarFile} hidden />
               </label>
             </>
@@ -134,14 +212,19 @@ export default function App() {
             onChange={(e) => setPassword(e.target.value)}
           />
 
-          <button type="submit" className="fb-btn-primary auth-submit-btn">
-            {isRegister ? "Đăng ký ngay" : "Đăng nhập"}
+          <button type="submit" className="fb-btn-primary auth-submit-btn" disabled={loading}>
+            {loading ? "Đang xử lý..." : isRegister ? "Đăng ký ngay" : "Đăng nhập"}
           </button>
         </form>
 
         <div className="auth-switch">
           {isRegister ? "Đã có tài khoản? " : "Chưa có tài khoản hẹn hò? "}
-          <span onClick={() => { setIsRegister(!isRegister); setErrorMsg(""); }}>
+          <span
+            onClick={() => {
+              setIsRegister(!isRegister);
+              setErrorMsg("");
+            }}
+          >
             {isRegister ? "Đăng nhập" : "Đăng ký miễn phí"}
           </span>
         </div>

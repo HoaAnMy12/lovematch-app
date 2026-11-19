@@ -22,7 +22,7 @@ body {
   color: var(--text-main);
 }
 
-/* MÀN HÌNH ĐĂNG NHẬP / ĐĂNG KÝ TÍM PASTEL */
+/* ĐĂNG NHẬP & ĐĂNG KÝ */
 .auth-wrapper {
   min-height: 100vh;
   display: flex;
@@ -117,18 +117,19 @@ body {
   text-decoration: underline;
 }
 
-/* THANH NAVBAR TRÊN CÙNG */
+/* NAVBAR TRÊN CÙNG */
 .fb-navbar {
   position: sticky;
   top: 0;
   z-index: 100;
-  background-color: rgba(255, 255, 255, 0.92);
+  background-color: rgba(255, 255, 255, 0.94);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border-soft);
-  padding: 10px 28px;
+  padding: 10px 24px;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
 }
 
 .nav-brand {
@@ -137,10 +138,37 @@ body {
   color: #7b3fe4;
 }
 
+.nav-center-tabs {
+  display: flex;
+  gap: 8px;
+}
+
+.nav-tab-btn {
+  background: transparent;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 16px;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.nav-tab-btn:hover {
+  background-color: var(--bg-input);
+  color: #7b3fe4;
+}
+
+.nav-tab-btn.active {
+  background: var(--primary-gradient);
+  color: #ffffff;
+}
+
 .nav-user-actions {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
 }
 
 .nav-profile {
@@ -162,18 +190,14 @@ body {
   cursor: pointer;
 }
 
-.btn-logout:hover {
-  background-color: #ffe0eb;
-}
-
-/* BỐ CỤC TRANG CHỦ 3 CỘT */
+/* BỐ CỤC 3 CỘT */
 .fb-layout {
   display: grid;
-  grid-template-columns: 260px 1fr 300px;
-  gap: 24px;
+  grid-template-columns: 250px 1fr 310px;
+  gap: 22px;
   background: linear-gradient(180deg, #f3ebff 0%, #fcf8ff 100%);
   min-height: calc(100vh - 60px);
-  padding: 24px;
+  padding: 22px;
 }
 
 .fb-card {
@@ -229,13 +253,151 @@ body {
   margin-top: 12px;
 }
 
-/* Khung đăng bài & xem trước ảnh */
+/* Cột giữa */
 .fb-feed {
-  max-width: 620px;
+  max-width: 640px;
   width: 100%;
   margin: 0 auto;
 }
 
+/* TRANG CÁ NHÂN & CHỈNH SỬA HỒ SƠ */
+.profile-header-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.profile-cover {
+  height: 110px;
+  background: var(--primary-gradient);
+}
+
+.profile-info-top {
+  padding: 0 20px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.profile-big-avatar {
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 4px solid #ffffff;
+  margin-top: -42px;
+  background-color: #ffffff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+.profile-main-text h2 {
+  margin: 0 0 4px 0;
+  font-size: 20px;
+}
+
+.profile-bio {
+  margin: 0 0 10px 0;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.profile-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.profile-tags span {
+  background-color: var(--bg-input);
+  color: #6b35d6;
+  padding: 5px 12px;
+  border-radius: 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.edit-profile-form {
+  border-top: 1px solid var(--border-soft);
+  padding: 18px 20px;
+  background-color: #faf7ff;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.edit-profile-form h4 {
+  margin: 0 0 4px 0;
+  color: #6b35d6;
+}
+
+.edit-profile-form label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.edit-profile-form input {
+  background-color: #ffffff;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 14px;
+  outline: none;
+}
+
+.edit-avatar-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.edit-form-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+/* QUẢN LÝ BẠN BÈ */
+.section-heading {
+  margin: 0 0 14px 0;
+  font-size: 16px;
+  color: #6b35d6;
+}
+
+.friends-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 12px;
+}
+
+.friend-card-box {
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 14px;
+  background-color: #faf7ff;
+  border: 1px solid var(--border-soft);
+}
+
+.friend-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.friend-card-info span {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.friend-card-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+/* ĐĂNG BÀI & CHỌN ẢNH TRONG MÁY */
 .create-post-top {
   display: flex;
   align-items: center;
@@ -249,7 +411,6 @@ body {
   border: 1px solid transparent;
   border-radius: 24px;
   padding: 12px 18px;
-  color: var(--text-main);
   font-size: 14px;
   outline: none;
 }
@@ -276,7 +437,7 @@ body {
   position: absolute;
   top: 10px;
   right: 10px;
-  background: rgba(45, 31, 71, 0.75);
+  background: rgba(45, 31, 71, 0.78);
   color: #ffffff;
   border: none;
   border-radius: 14px;
@@ -301,41 +462,72 @@ body {
   font-size: 13.5px;
   font-weight: 700;
   cursor: pointer;
+  display: inline-block;
 }
 
 .upload-photo-btn:hover {
   background-color: var(--bg-hover);
 }
 
+/* NÚT BẤM */
 .fb-btn-primary {
   background: var(--primary-gradient);
   color: #ffffff;
   border: none;
-  padding: 8px 20px;
+  padding: 8px 18px;
   border-radius: 20px;
   font-weight: 700;
-  font-size: 14px;
+  font-size: 13.5px;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(167, 112, 239, 0.3);
+  box-shadow: 0 4px 12px rgba(167, 112, 239, 0.28);
 }
 
 .fb-btn-secondary {
   background-color: var(--bg-input);
-  color: var(--text-muted);
+  color: #6b35d6;
   border: none;
   padding: 8px 14px;
   border-radius: 20px;
-  font-weight: 600;
+  font-weight: 700;
   font-size: 13px;
   cursor: pointer;
 }
 
-/* Bài viết & Bình luận */
+.btn-danger-soft {
+  background-color: #fff0f5;
+  color: #e03e70;
+  border: 1px solid #ffd1e0;
+  padding: 7px 12px;
+  border-radius: 20px;
+  font-weight: 700;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+/* BÀI VIẾT */
+.post-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
 .post-header {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 12px;
+}
+
+.post-author-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .post-author {
@@ -384,7 +576,7 @@ body {
   color: var(--text-muted);
   font-weight: 700;
   font-size: 14px;
-  padding: 8px 16px;
+  padding: 8px 14px;
   border-radius: 12px;
   cursor: pointer;
 }
@@ -399,6 +591,7 @@ body {
   background-color: #fff0f5;
 }
 
+/* BÌNH LUẬN */
 .post-comments {
   margin-top: 12px;
 }
@@ -458,11 +651,6 @@ body {
   outline: none;
 }
 
-.comment-input-row input:focus {
-  background-color: #ffffff;
-  border-color: var(--primary-purple);
-}
-
 .comment-input-row button {
   background: var(--primary-gradient);
   color: #ffffff;
@@ -473,36 +661,230 @@ body {
   cursor: pointer;
 }
 
-/* Cột phải */
+/* CỘT PHẢI */
 .sidebar-title {
-  margin: 0 0 14px 0;
+  margin: 0 0 12px 0;
   color: #6b35d6;
+  font-size: 15px;
+}
+
+.empty-text {
+  font-size: 13px;
+  color: var(--text-muted);
 }
 
 .friend-request-item {
   display: flex;
-  gap: 12px;
+  gap: 10px;
   padding: 10px;
   border-radius: 14px;
   background-color: #faf7ff;
   border: 1px solid var(--border-soft);
+  margin-bottom: 10px;
 }
 
 .friend-info {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .friend-info span {
-  font-size: 12.5px;
+  font-size: 12px;
   color: var(--text-muted);
 }
 
 .friend-btns {
   display: flex;
+  gap: 6px;
+  margin-top: 5px;
+}
+
+.friend-mini-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px;
+  border-radius: 12px;
+  margin-bottom: 6px;
+}
+
+.friend-mini-row:hover {
+  background-color: var(--bg-input);
+}
+
+.friend-mini-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.friend-mini-btns {
+  display: flex;
+  gap: 6px;
+}
+
+.icon-btn-chat,
+.icon-btn-remove {
+  border: none;
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.icon-btn-chat {
+  background-color: var(--bg-input);
+}
+
+.icon-btn-remove {
+  background-color: #fff0f5;
+  color: #e03e70;
+}
+
+/* HỘP THOẠI NHẮN TIN LÀM QUEN */
+.chat-popup-box {
+  position: fixed;
+  bottom: 0;
+  right: 24px;
+  width: 330px;
+  height: 410px;
+  background-color: #ffffff;
+  border-radius: 18px 18px 0 0;
+  box-shadow: 0 -4px 25px rgba(107, 53, 214, 0.22);
+  border: 1px solid var(--border-soft);
+  display: flex;
+  flex-direction: column;
+  z-index: 200;
+  overflow: hidden;
+}
+
+.chat-popup-header {
+  background: var(--primary-gradient);
+  color: #ffffff;
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.chat-partner-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.chat-partner-info div {
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-partner-info span {
+  font-size: 11px;
+  opacity: 0.9;
+}
+
+.chat-close-btn {
+  background: rgba(255, 255, 255, 0.25);
+  border: none;
+  color: #ffffff;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.chat-popup-messages {
+  flex: 1;
+  padding: 14px;
+  overflow-y: auto;
+  background-color: #faf7ff;
+  display: flex;
+  flex-direction: column;
   gap: 8px;
-  margin-top: 6px;
+}
+
+.chat-empty-hint {
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 40px;
+}
+
+.chat-bubble-row {
+  display: flex;
+}
+
+.chat-bubble-row.mine {
+  justify-content: flex-end;
+}
+
+.chat-bubble-row.theirs {
+  justify-content: flex-start;
+}
+
+.chat-bubble {
+  max-width: 78%;
+  padding: 9px 14px;
+  border-radius: 16px;
+  font-size: 13.5px;
+}
+
+.chat-bubble p {
+  margin: 0 0 4px 0;
+}
+
+.chat-bubble span {
+  font-size: 10px;
+  opacity: 0.75;
+  display: block;
+  text-align: right;
+}
+
+.chat-bubble-row.mine .chat-bubble {
+  background: var(--primary-gradient);
+  color: #ffffff;
+  border-bottom-right-radius: 4px;
+}
+
+.chat-bubble-row.theirs .chat-bubble {
+  background-color: #ffffff;
+  color: var(--text-main);
+  border: 1px solid var(--border-soft);
+  border-bottom-left-radius: 4px;
+}
+
+.chat-popup-input {
+  display: flex;
+  gap: 8px;
+  padding: 10px;
+  background-color: #ffffff;
+  border-top: 1px solid var(--border-soft);
+}
+
+.chat-popup-input input {
+  flex: 1;
+  background-color: var(--bg-input);
+  border: none;
+  border-radius: 18px;
+  padding: 9px 14px;
+  font-size: 13.5px;
+  outline: none;
+}
+
+.chat-popup-input button {
+  background: var(--primary-gradient);
+  color: #ffffff;
+  border: none;
+  border-radius: 18px;
+  padding: 0 16px;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 @media (max-width: 960px) {
@@ -513,5 +895,12 @@ body {
   .fb-sidebar-left,
   .fb-sidebar-right {
     display: none;
+  }
+  .nav-center-tabs {
+    display: none;
+  }
+  .chat-popup-box {
+    right: 10px;
+    width: calc(100% - 20px);
   }
 }
