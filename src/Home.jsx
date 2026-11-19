@@ -1,683 +1,261 @@
-import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { useApp, DEFAULT_AVATAR, VIETNAM_PROVINCES } from "./AppContext";
+import React, { useState, useEffect } from "react";
+import "./Home.css";
 
-function Home() {
-  const navigate = useNavigate();
-  const {
-    currentUser,
-    discoverProfiles,
-    addMatch,
-    friends,
-    addFriend,
-    isFriend,
-    notifications,
-  } = useApp();
+// NẾU BẠN ĐÃ CẤU HÌNH FIREBASE, BỎ DẤU // Ở 2 DÒNG DƯỚI ĐỂ ĐỒNG BỘ BÀI VIẾT GIỮA NHIỀU MÁY:
+// import { db } from "./firebase";
+// import { collection, addDoc, onSnapshot, query, orderBy, updateDoc, doc, arrayUnion, arrayRemove } from "firebase/firestore";
 
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [swipeAnimation, setSwipeAnimation] = useState("");
-  const [filterLocation, setFilterLocation] = useState("Tất cả khu vực");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [toastMsg, setToastMsg] = useState("");
-
-  const unreadCount = notifications.filter((n) => n.unread).length;
-
-  const filteredCandidates = discoverProfiles.filter((person) => {
-    const matchLocation =
-      filterLocation === "Tất cả khu vực" ||
-      person.location.toLowerCase().includes(filterLocation.toLowerCase());
-
-    const keyword = searchQuery.trim().toLowerCase();
-    const matchKeyword =
-      !keyword ||
-      person.name.toLowerCase().includes(keyword) ||
-      person.location.toLowerCase().includes(keyword) ||
-      person.bio.toLowerCase().includes(keyword) ||
-      (person.hobbies || []).some((h) => h.toLowerCase().includes(keyword));
-
-    return matchLocation && matchKeyword;
-  });
-
-  const currentCandidate = filteredCandidates[currentIndex];
-
-  const showToast = (msg) => {
-    setToastMsg(msg);
-    setTimeout(() => setToastMsg(""), 2500);
+export default function Home({ currentUser }) {
+  // Dữ liệu người dùng hiện tại (phòng trường hợp chưa đăng nhập hoặc bị undefined)
+  const user = currentUser || {
+    id: "user_1",
+    name: "Hoaa Maii",
+    avatar: "https://i.pravatar.cc/150?img=47",
   };
 
-  const handleAddFriendClick = (person) => {
-    if (isFriend(person.id)) return;
-    addFriend(person);
-    showToast(`✅ Đã thêm ${person.name} vào danh sách bạn bè!`);
-  };
-
-  const handleResetFilters = () => {
-    setFilterLocation("Tất cả khu vực");
-    setSearchQuery("");
-    setCurrentIndex(0);
-  };
-
-  const handleFilterNearMe = () => {
-    if (currentUser?.location) {
-      setFilterLocation(currentUser.location);
-      setCurrentIndex(0);
+  // Danh sách bài viết trên bảng tin
+  const [posts, setPosts] = useState([
+    {
+      id: "post_1",
+      authorName: "Hoàng Thị Huyền",
+      authorAvatar: "https://i.pravatar.cc/150?img=32",
+      createdAt: "1 giờ trước",
+      content: "Chiều nay hoàng hôn Đà Nẵng đẹp quá, có ai rảnh đi dạo biển Mỹ Khê không nhỉ? 🌅✨",
+      image: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=80",
+      likes: ["user_2"],
+      comments: [
+        { id: "c1", userName: "Trần Thị Tâm", text: "Xinh quá bà ơi, cho tui đi ké với!" }
+      ]
     }
-  };
+  ]);
 
-  const handlePass = () => {
-    setSwipeAnimation("left");
-    setTimeout(() => {
-      setSwipeAnimation("");
-      setCurrentIndex((prev) => prev + 1);
-    }, 250);
-  };
+  const [newContent, setNewContent] = useState("");
+  const [newImage, setNewImage] = useState("");
+  const [commentInputs, setCommentInputs] = useState({});
 
-  const handleLike = (isSuperLike = false) => {
-    if (!currentCandidate) return;
-    setSwipeAnimation(isSuperLike ? "up" : "right");
-
-    const newMatch = addMatch(currentCandidate, isSuperLike);
-
-    setTimeout(() => {
-      setSwipeAnimation("");
-      setCurrentIndex((prev) => prev + 1);
-
-      if (currentCandidate.likesYou || isSuperLike) {
-        navigate("/match", { state: { matchedUser: newMatch } });
+  // Lắng nghe bài viết mới (Dùng localStorage làm mẫu nếu chưa nối Firebase)
+  useEffect(() => {
+    const savedPosts = localStorage.getItem("lovematch_feed_posts");
+    if (savedPosts) {
+      try {
+        const parsed = JSON.parse(savedPosts);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setPosts(parsed);
+        }
+      } catch (e) {
+        console.error("Lỗi đọc dữ liệu bài viết:", e);
       }
-    }, 250);
+    }
+
+    /* --- NẾU DÙNG FIREBASE FIRESTORE THÌ MỞ ĐOẠN NÀY RA ---
+    const q = query(collection(db, "posts"), orderBy("timestamp", "desc"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const list = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      setPosts(list);
+    });
+    return () => unsubscribe();
+    */
+  }, []);
+
+  // Xử lý đăng bài mới
+  const handleCreatePost = async (e) => {
+    e.preventDefault();
+    if (!newContent.trim() && !newImage.trim()) return;
+
+    const newPost = {
+      id: "post_" + Date.now(),
+      authorName: user.name || "Người dùng ẩn danh",
+      authorAvatar: user.avatar || "https://i.pravatar.cc/150?img=12",
+      createdAt: "Vừa xong",
+      content: newContent,
+      image: newImage,
+      likes: [],
+      comments: [],
+      timestamp: Date.now()
+    };
+
+    const updatedPosts = [newPost, ...(posts || [])];
+    setPosts(updatedPosts);
+    localStorage.setItem("lovematch_feed_posts", JSON.stringify(updatedPosts));
+
+    /* --- NẾU DÙNG FIREBASE FIRESTORE THÌ MỞ ĐOẠN NÀY RA ---
+    await addDoc(collection(db, "posts"), newPost);
+    */
+
+    setNewContent("");
+    setNewImage("");
+  };
+
+  // Xử lý Thả tim (Like) bài viết
+  const handleToggleLike = (postId) => {
+    const updatedPosts = (posts || []).map((post) => {
+      if (post.id !== postId) return post;
+      const currentLikes = Array.isArray(post.likes) ? post.likes : [];
+      const hasLiked = currentLikes.includes(user.id);
+      const nextLikes = hasLiked
+        ? currentLikes.filter((id) => id !== user.id)
+        : [...currentLikes, user.id];
+      return { ...post, likes: nextLikes };
+    });
+
+    setPosts(updatedPosts);
+    localStorage.setItem("lovematch_feed_posts", JSON.stringify(updatedPosts));
+  };
+
+  // Xử lý gửi bình luận
+  const handleAddComment = (postId) => {
+    const text = (commentInputs[postId] || "").trim();
+    if (!text) return;
+
+    const updatedPosts = (posts || []).map((post) => {
+      if (post.id !== postId) return post;
+      const currentComments = Array.isArray(post.comments) ? post.comments : [];
+      return {
+        ...post,
+        comments: [
+          ...currentComments,
+          { id: "c_" + Date.now(), userName: user.name, text }
+        ]
+      };
+    });
+
+    setPosts(updatedPosts);
+    localStorage.setItem("lovematch_feed_posts", JSON.stringify(updatedPosts));
+    setCommentInputs({ ...commentInputs, [postId]: "" });
   };
 
   return (
-    <div style={styles.page}>
-      {toastMsg && <div style={styles.toast}>{toastMsg}</div>}
+    <div className="fb-layout">
+      {/* CỘT TRÁI: MENU ĐIỀU HƯỚNG GIỐNG FACEBOOK */}
+      <aside className="fb-sidebar-left">
+        <div className="fb-menu-item active">
+          <img src={user.avatar} alt="avatar" className="fb-avatar-sm" />
+          <span>{user.name}</span>
+        </div>
+        <div className="fb-menu-item">❤️ Ghép đôi ngẫu nhiên</div>
+        <div className="fb-menu-item">👥 Bạn bè</div>
+        <div className="fb-menu-item">💬 Tin nhắn</div>
+        <div className="fb-menu-item">🔖 Bài viết đã lưu</div>
+      </aside>
 
-      {/* HEADER */}
-      <header style={styles.header}>
-        <h2 style={styles.logo} onClick={() => navigate("/home")}>
-          💕 LoveMatch
-        </h2>
-
-        {/* THANH TÌM KIẾM & CHỌN TỈNH/THÀNH PHỐ */}
-        <div style={styles.searchBarGroup}>
-          <div style={styles.searchInputWrap}>
-            <span>🔍</span>
+      {/* CỘT GIỮA: KHUNG ĐĂNG BÀI & BẢNG TIN CỦA MỌI NGƯỜI */}
+      <main className="fb-feed">
+        {/* Khung tạo bài viết */}
+        <div className="fb-card create-post-box">
+          <div className="create-post-top">
+            <img src={user.avatar} alt="avatar" className="fb-avatar-md" />
             <input
               type="text"
-              placeholder="Tìm tên, sở thích (VD: cafe, đọc sách)..."
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setCurrentIndex(0);
-              }}
-              style={styles.searchInput}
+              placeholder={`${user.name} ơi, bạn đang nghĩ gì thế?`}
+              value={newContent}
+              onChange={(e) => setNewContent(e.target.value)}
             />
-            {searchQuery && (
-              <button
-                style={styles.clearSearchBtn}
-                onClick={() => {
-                  setSearchQuery("");
-                  setCurrentIndex(0);
-                }}
-              >
-                ✖
-              </button>
-            )}
           </div>
-
-          <select
-            value={filterLocation}
-            onChange={(e) => {
-              setFilterLocation(e.target.value);
-              setCurrentIndex(0);
-            }}
-            style={styles.filterSelect}
-            title="Chọn tỉnh / thành phố"
-          >
-            {VIETNAM_PROVINCES.map((prov) => (
-              <option key={prov} value={prov} style={{ color: "#2d3748" }}>
-                📍 {prov}
-              </option>
-            ))}
-          </select>
-
-          {currentUser?.location && (
-            <button
-              style={styles.nearMeBtn}
-              onClick={handleFilterNearMe}
-              title={`Lọc người ở ${currentUser.location}`}
-            >
-              🎯 Gần tôi ({currentUser.location})
+          <div className="create-post-image-input">
+            <input
+              type="text"
+              placeholder="Dán link hình ảnh (nếu muốn kèm ảnh)..."
+              value={newImage}
+              onChange={(e) => setNewImage(e.target.value)}
+            />
+          </div>
+          <div className="create-post-bottom">
+            <span>🖼️ Ảnh/Video</span>
+            <span>😊 Cảm xúc/Hoạt động</span>
+            <button onClick={handleCreatePost} className="fb-btn-primary">
+              Đăng bài
             </button>
-          )}
+          </div>
         </div>
 
-        <div style={styles.headerActions}>
-          <button
-            style={styles.headerBtn}
-            onClick={() => navigate("/notifications")}
-            title="Thông báo"
-          >
-            🔔
-            {unreadCount > 0 && (
-              <span style={styles.badgeCount}>{unreadCount}</span>
-            )}
-          </button>
-          <button
-            style={styles.headerBtn}
-            onClick={() => navigate("/profile")}
-            title="Hồ sơ cá nhân"
-          >
-            👤
-          </button>
-        </div>
-      </header>
+        {/* Danh sách bài viết từ người dùng */}
+        {(posts || []).map((post) => {
+          const likesList = Array.isArray(post.likes) ? post.likes : [];
+          const commentsList = Array.isArray(post.comments) ? post.comments : [];
+          const isLiked = likesList.includes(user.id);
 
-      {/* LAYOUT CHÍNH */}
-      <div style={styles.layoutContainer}>
-        {/* SIDEBAR TRÁI */}
-        <aside style={styles.leftSidebar}>
-          <div
-            style={styles.userProfileCard}
-            onClick={() => navigate("/profile")}
-          >
-            <img
-              src={currentUser?.avatar || DEFAULT_AVATAR}
-              alt={currentUser?.name}
-              style={styles.sidebarAvatar}
-            />
-            <div>
-              <div style={styles.sidebarUserName}>{currentUser?.name}</div>
-              <div style={styles.sidebarUserSub}>
-                📍 {currentUser?.location || "Việt Nam"}
-              </div>
-            </div>
-          </div>
-
-          <div style={styles.menuList}>
-            <button
-              style={{ ...styles.navBtn, ...styles.navBtnActive }}
-              onClick={() => navigate("/home")}
-            >
-              <span>🏠</span> <span>Khám phá</span>
-            </button>
-            <button
-              style={styles.navBtn}
-              onClick={() => navigate("/match-list")}
-            >
-              <span>👥</span> <span>Bạn bè ({friends.length})</span>
-            </button>
-            <button style={styles.navBtn} onClick={() => navigate("/chat")}>
-              <span>💬</span> <span>Tin nhắn</span>
-            </button>
-            <button
-              style={styles.navBtn}
-              onClick={() => navigate("/notifications")}
-            >
-              <span>🔔</span> <span>Thông báo</span>
-              {unreadCount > 0 && (
-                <span style={styles.sideBadge}>{unreadCount}</span>
-              )}
-            </button>
-            <button style={styles.navBtn} onClick={() => navigate("/profile")}>
-              <span>👤</span> <span>Hồ sơ</span>
-            </button>
-          </div>
-        </aside>
-
-        {/* KHUNG QUẸT THẺ TRUNG TÂM */}
-        <main style={styles.mainContent}>
-          <div style={styles.filterStatusBar}>
-            <span>
-              Khu vực: <strong>{filterLocation}</strong>
-              {searchQuery && (
-                <>
-                  {" "}
-                  • Từ khóa: <strong>"{searchQuery}"</strong>
-                </>
-              )}{" "}
-              ({filteredCandidates.length} kết quả)
-            </span>
-            {(filterLocation !== "Tất cả khu vực" || searchQuery) && (
-              <button
-                style={styles.resetFilterLink}
-                onClick={handleResetFilters}
-              >
-                Đặt lại bộ lọc
-              </button>
-            )}
-          </div>
-
-          {currentCandidate ? (
-            <div
-              style={{
-                ...styles.card,
-                transform:
-                  swipeAnimation === "left"
-                    ? "translateX(-120px) rotate(-10deg)"
-                    : swipeAnimation === "right"
-                    ? "translateX(120px) rotate(10deg)"
-                    : swipeAnimation === "up"
-                    ? "translateY(-80px) scale(1.03)"
-                    : "none",
-                opacity: swipeAnimation ? 0.5 : 1,
-              }}
-            >
-              <div style={styles.imageWrapper}>
+          return (
+            <article key={post.id} className="fb-card post-card">
+              {/* Đầu bài viết */}
+              <div className="post-header">
                 <img
-                  src={currentCandidate.image}
-                  alt={currentCandidate.name}
-                  style={styles.cardImage}
+                  src={post.authorAvatar || "https://i.pravatar.cc/150?img=15"}
+                  alt="author"
+                  className="fb-avatar-md"
                 />
+                <div>
+                  <h4 className="post-author">{post.authorName}</h4>
+                  <span className="post-time">{post.createdAt} · 🌎</span>
+                </div>
+              </div>
 
-                {/* NÚT KẾT BẠN NHANH GÓC PHẢI TRÊN */}
+              {/* Nội dung bài viết */}
+              <p className="post-content">{post.content}</p>
+              {post.image && (
+                <img src={post.image} alt="post" className="post-image" />
+              )}
+
+              {/* Thống kê lượt thích & bình luận */}
+              <div className="post-stats">
+                <span>❤️ {likesList.length} lượt thích</span>
+                <span>{commentsList.length} bình luận</span>
+              </div>
+
+              {/* Nút tương tác */}
+              <div className="post-actions">
                 <button
-                  style={{
-                    ...styles.addFriendBadgeBtn,
-                    backgroundColor: isFriend(currentCandidate.id)
-                      ? "#38a169"
-                      : "rgba(255, 77, 109, 0.92)",
-                  }}
-                  onClick={() => handleAddFriendClick(currentCandidate)}
+                  className={isLiked ? "liked" : ""}
+                  onClick={() => handleToggleLike(post.id)}
                 >
-                  {isFriend(currentCandidate.id)
-                    ? "✓ Đã là bạn bè"
-                    : "➕ Kết bạn"}
+                  {isLiked ? "❤️ Đã thích" : "🤍 Thích"}
                 </button>
+                <button>💬 Bình luận</button>
+                <button>💌 Nhắn tin làm quen</button>
+              </div>
 
-                <div style={styles.imageOverlay}>
-                  <div style={styles.onlineBadge}>
-                    {currentCandidate.isOnline
-                      ? "🟢 Đang hoạt động"
-                      : "⚪ Ngoại tuyến"}
+              {/* Khu vực bình luận */}
+              <div className="post-comments">
+                {commentsList.map((c) => (
+                  <div key={c.id} className="comment-item">
+                    <strong>{c.userName}: </strong>
+                    <span>{c.text}</span>
                   </div>
-                  <h2 style={styles.cardName}>
-                    {currentCandidate.name}, {currentCandidate.age}
-                  </h2>
-                  <p style={styles.cardLocation}>
-                    📍 Tỉnh/TP: {currentCandidate.location} •{" "}
-                    {currentCandidate.distance}
-                  </p>
+                ))}
+                <div className="comment-input-row">
+                  <input
+                    type="text"
+                    placeholder="Viết bình luận..."
+                    value={commentInputs[post.id] || ""}
+                    onChange={(e) =>
+                      setCommentInputs({ ...commentInputs, [post.id]: e.target.value })
+                    }
+                    onKeyDown={(e) => e.key === "Enter" && handleAddComment(post.id)}
+                  />
+                  <button onClick={() => handleAddComment(post.id)}>Gửi</button>
                 </div>
               </div>
+            </article>
+          );
+        })}
+      </main>
 
-              <div style={styles.cardBody}>
-                <p style={styles.bio}>{currentCandidate.bio}</p>
-                <div style={styles.hobbiesRow}>
-                  {currentCandidate.hobbies.map((hobby, idx) => (
-                    <span key={idx} style={styles.hobbyTag}>
-                      {hobby}
-                    </span>
-                  ))}
-                </div>
-
-                {/* NÚT QUẸT THẺ */}
-                <div style={styles.actionButtons}>
-                  <button
-                    style={{ ...styles.circleBtn, ...styles.passBtn }}
-                    onClick={handlePass}
-                    title="Bỏ qua"
-                  >
-                    ✖
-                  </button>
-                  <button
-                    style={{ ...styles.circleBtn, ...styles.superBtn }}
-                    onClick={() => handleLike(true)}
-                    title="Siêu thích"
-                  >
-                    ⭐
-                  </button>
-                  <button
-                    style={{ ...styles.circleBtn, ...styles.likeBtn }}
-                    onClick={() => handleLike(false)}
-                    title="Thích"
-                  >
-                    ❤️
-                  </button>
-                </div>
+      {/* CỘT PHẢI: LỜI MỜI KẾT BẠN / GỢI Ý HẸN HÒ */}
+      <aside className="fb-sidebar-right">
+        <div className="fb-card">
+          <h4 className="sidebar-title">Gợi ý kết đôi & Kết bạn</h4>
+          <div className="friend-request-item">
+            <img src="https://i.pravatar.cc/150?img=11" alt="friend" className="fb-avatar-md" />
+            <div className="friend-info">
+              <strong>Điệp Nguyễnvăn</strong>
+              <span>Cùng ở Đà Nẵng</span>
+              <div className="friend-btns">
+                <button className="fb-btn-primary">Xác nhận</button>
+                <button className="fb-btn-secondary">Xóa</button>
               </div>
             </div>
-          ) : (
-            <div style={styles.emptyCard}>
-              <div style={{ fontSize: "54px", marginBottom: "12px" }}>🔎</div>
-              <h3>Không còn gợi ý phù hợp!</h3>
-              <p style={{ color: "#718096", marginBottom: "20px" }}>
-                Bạn đã xem hết danh sách hoặc chưa có ai khớp với khu vực{" "}
-                <strong>{filterLocation}</strong>.
-              </p>
-              <button style={styles.reloadBtn} onClick={handleResetFilters}>
-                🔄 Xem tất cả khu vực
-              </button>
-            </div>
-          )}
-        </main>
-      </div>
+          </div>
+        </div>
+      </aside>
     </div>
   );
 }
-
-const styles = {
-  page: {
-    minHeight: "100vh",
-    background:
-      "linear-gradient(135deg, #ffe6f0 0%, #fff0f5 50%, #fce4ec 100%)",
-    fontFamily:
-      "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-  },
-  toast: {
-    position: "fixed",
-    top: "80px",
-    right: "24px",
-    backgroundColor: "#2d3748",
-    color: "#ffffff",
-    padding: "12px 20px",
-    borderRadius: "14px",
-    fontSize: "14px",
-    fontWeight: "600",
-    boxShadow: "0 8px 25px rgba(0,0,0,0.2)",
-    zIndex: 999,
-  },
-  header: {
-    minHeight: "65px",
-    background: "linear-gradient(135deg, #ff4d6d, #ff758c)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: "8px 28px",
-    color: "white",
-    position: "sticky",
-    top: 0,
-    zIndex: 100,
-    boxShadow: "0 4px 15px rgba(255, 77, 109, 0.2)",
-    flexWrap: "wrap",
-    gap: "12px",
-  },
-  logo: { margin: 0, fontSize: "22px", fontWeight: "bold", cursor: "pointer" },
-  searchBarGroup: {
-    display: "flex",
-    alignItems: "center",
-    gap: "10px",
-    flex: 1,
-    maxWidth: "680px",
-    flexWrap: "wrap",
-  },
-  searchInputWrap: {
-    display: "flex",
-    alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.95)",
-    borderRadius: "20px",
-    padding: "6px 14px",
-    flex: 1,
-    minWidth: "200px",
-    gap: "8px",
-  },
-  searchInput: {
-    border: "none",
-    outline: "none",
-    background: "transparent",
-    fontSize: "13px",
-    color: "#2d3748",
-    width: "100%",
-  },
-  clearSearchBtn: {
-    border: "none",
-    background: "transparent",
-    color: "#a0aec0",
-    cursor: "pointer",
-    fontSize: "12px",
-  },
-  filterSelect: {
-    padding: "8px 14px",
-    borderRadius: "20px",
-    border: "none",
-    backgroundColor: "rgba(255,255,255,0.25)",
-    color: "white",
-    fontWeight: "600",
-    fontSize: "13px",
-    outline: "none",
-    cursor: "pointer",
-  },
-  nearMeBtn: {
-    padding: "8px 14px",
-    borderRadius: "20px",
-    border: "1px solid rgba(255,255,255,0.6)",
-    backgroundColor: "rgba(255,255,255,0.18)",
-    color: "white",
-    fontWeight: "600",
-    fontSize: "12px",
-    cursor: "pointer",
-    whiteSpace: "nowrap",
-  },
-  headerActions: { display: "flex", gap: "12px" },
-  headerBtn: {
-    position: "relative",
-    width: "40px",
-    height: "40px",
-    border: "none",
-    borderRadius: "50%",
-    background: "rgba(255, 255, 255, 0.25)",
-    color: "white",
-    fontSize: "18px",
-    cursor: "pointer",
-  },
-  badgeCount: {
-    position: "absolute",
-    top: "-4px",
-    right: "-4px",
-    backgroundColor: "#ffe600",
-    color: "#2d3748",
-    fontSize: "11px",
-    fontWeight: "bold",
-    width: "18px",
-    height: "18px",
-    borderRadius: "50%",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  layoutContainer: { display: "flex", minHeight: "calc(100vh - 65px)" },
-  leftSidebar: {
-    width: "260px",
-    backgroundColor: "#ffffff",
-    borderRight: "1px solid #ffe1e9",
-    padding: "24px 16px",
-    boxSizing: "border-box",
-  },
-  userProfileCard: {
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-    padding: "12px",
-    borderRadius: "16px",
-    backgroundColor: "#fff0f5",
-    border: "1px solid #ffe1e9",
-    marginBottom: "20px",
-    cursor: "pointer",
-  },
-  sidebarAvatar: {
-    width: "48px",
-    height: "48px",
-    borderRadius: "50%",
-    objectFit: "cover",
-    border: "2px solid #ff4d6d",
-  },
-  sidebarUserName: { fontWeight: "bold", color: "#2d3748", fontSize: "15px" },
-  sidebarUserSub: { fontSize: "12px", color: "#ff4d6d", marginTop: "2px" },
-  menuList: { display: "flex", flexDirection: "column", gap: "8px" },
-  navBtn: {
-    border: "none",
-    background: "transparent",
-    padding: "13px 18px",
-    borderRadius: "14px",
-    cursor: "pointer",
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-    color: "#718096",
-    fontSize: "15px",
-    fontWeight: "600",
-    textAlign: "left",
-  },
-  navBtnActive: { backgroundColor: "#ffe6f0", color: "#ff4d6d" },
-  sideBadge: {
-    marginLeft: "auto",
-    backgroundColor: "#ff4d6d",
-    color: "white",
-    fontSize: "11px",
-    padding: "2px 8px",
-    borderRadius: "10px",
-  },
-  mainContent: {
-    flex: 1,
-    display: "flex",
-    flexDirection: "column",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: "20px 24px",
-  },
-  filterStatusBar: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    width: "100%",
-    maxWidth: "400px",
-    backgroundColor: "#ffffff",
-    padding: "10px 16px",
-    borderRadius: "14px",
-    marginBottom: "14px",
-    fontSize: "13px",
-    color: "#4a5568",
-    border: "1px solid #ffe1e9",
-    boxSizing: "border-box",
-  },
-  resetFilterLink: {
-    border: "none",
-    background: "transparent",
-    color: "#ff4d6d",
-    fontWeight: "bold",
-    cursor: "pointer",
-    fontSize: "12px",
-    textDecoration: "underline",
-  },
-  card: {
-    width: "100%",
-    maxWidth: "400px",
-    backgroundColor: "#ffffff",
-    borderRadius: "28px",
-    overflow: "hidden",
-    boxShadow: "0 15px 35px rgba(255, 77, 109, 0.16)",
-    border: "1px solid #ffe1e9",
-    transition: "all 0.25s ease",
-  },
-  imageWrapper: { position: "relative", height: "370px" },
-  cardImage: { width: "100%", height: "100%", objectFit: "cover" },
-  addFriendBadgeBtn: {
-    position: "absolute",
-    top: "14px",
-    right: "14px",
-    border: "2px solid #ffffff",
-    color: "#ffffff",
-    padding: "7px 14px",
-    borderRadius: "20px",
-    fontSize: "12px",
-    fontWeight: "bold",
-    cursor: "pointer",
-    boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
-  },
-  imageOverlay: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: "24px 20px 16px",
-    background: "linear-gradient(to top, rgba(0,0,0,0.8), transparent)",
-    color: "#ffffff",
-  },
-  onlineBadge: {
-    display: "inline-block",
-    backgroundColor: "rgba(0,0,0,0.5)",
-    padding: "4px 10px",
-    borderRadius: "12px",
-    fontSize: "12px",
-    marginBottom: "6px",
-  },
-  cardName: { margin: "0 0 4px 0", fontSize: "26px", fontWeight: "bold" },
-  cardLocation: { margin: 0, fontSize: "14px", opacity: 0.95 },
-  cardBody: { padding: "20px" },
-  bio: {
-    margin: "0 0 14px 0",
-    fontSize: "14px",
-    color: "#4a5568",
-    lineHeight: "1.5",
-  },
-  hobbiesRow: {
-    display: "flex",
-    flexWrap: "wrap",
-    gap: "8px",
-    marginBottom: "20px",
-  },
-  hobbyTag: {
-    backgroundColor: "#fff0f5",
-    color: "#ff4d6d",
-    padding: "5px 12px",
-    borderRadius: "14px",
-    fontSize: "12px",
-    fontWeight: "600",
-  },
-  actionButtons: {
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: "22px",
-  },
-  circleBtn: {
-    border: "none",
-    borderRadius: "50%",
-    cursor: "pointer",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    boxShadow: "0 6px 18px rgba(0,0,0,0.1)",
-    transition: "transform 0.15s",
-  },
-  passBtn: {
-    width: "58px",
-    height: "58px",
-    backgroundColor: "#fff5f5",
-    color: "#e53e3e",
-    fontSize: "22px",
-  },
-  superBtn: {
-    width: "50px",
-    height: "50px",
-    backgroundColor: "#ebf8ff",
-    color: "#3182ce",
-    fontSize: "20px",
-  },
-  likeBtn: {
-    width: "64px",
-    height: "64px",
-    background: "linear-gradient(135deg, #ff4d6d, #ff758c)",
-    color: "#ffffff",
-    fontSize: "26px",
-  },
-  emptyCard: {
-    backgroundColor: "#ffffff",
-    padding: "40px 30px",
-    borderRadius: "24px",
-    textAlign: "center",
-    maxWidth: "380px",
-    boxShadow: "0 10px 30px rgba(255, 77, 109, 0.1)",
-  },
-  reloadBtn: {
-    border: "none",
-    backgroundColor: "#ff4d6d",
-    color: "white",
-    padding: "12px 24px",
-    borderRadius: "20px",
-    fontWeight: "bold",
-    cursor: "pointer",
-  },
-};
-
-export default Home;

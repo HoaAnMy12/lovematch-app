@@ -1,0 +1,248 @@
+.fb-layout {
+  display: grid;
+  grid-template-columns: 280px 1fr 300px;
+  gap: 20px;
+  background-color: #18191a;
+  color: #e4e6eb;
+  min-height: 100vh;
+  padding: 20px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.fb-card {
+  background-color: #242526;
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.fb-avatar-sm {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.fb-avatar-md {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+/* Cột trái */
+.fb-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.fb-menu-item:hover {
+  background-color: #3a3b3c;
+}
+
+/* Khung đăng bài */
+.fb-feed {
+  max-width: 620px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.create-post-top {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.create-post-top input,
+.create-post-image-input input {
+  width: 100%;
+  background-color: #3a3b3c;
+  border: none;
+  border-radius: 20px;
+  padding: 10px 16px;
+  color: #e4e6eb;
+  outline: none;
+}
+
+.create-post-image-input {
+  margin-bottom: 12px;
+}
+
+.create-post-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid #3e4042;
+  padding-top: 10px;
+  font-size: 14px;
+  color: #b0b3b8;
+}
+
+.fb-btn-primary {
+  background-color: #2374e1;
+  color: white;
+  border: none;
+  padding: 7px 16px;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.fb-btn-secondary {
+  background-color: #3a3b3c;
+  color: #e4e6eb;
+  border: none;
+  padding: 7px 14px;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Bài viết */
+.post-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.post-author {
+  margin: 0;
+  font-size: 15px;
+}
+
+.post-time {
+  font-size: 12px;
+  color: #b0b3b8;
+}
+
+.post-content {
+  margin: 0 0 12px 0;
+  line-height: 1.5;
+}
+
+.post-image {
+  width: 100%;
+  max-height: 450px;
+  object-fit: cover;
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+
+.post-stats {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: #b0b3b8;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #3e4042;
+}
+
+.post-actions {
+  display: flex;
+  justify-content: space-around;
+  padding: 6px 0;
+  border-bottom: 1px solid #3e4042;
+}
+
+.post-actions button {
+  background: transparent;
+  border: none;
+  color: #b0b3b8;
+  font-weight: 600;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.post-actions button:hover {
+  background-color: #3a3b3c;
+}
+
+.post-actions button.liked {
+  color: #f3425f;
+}
+
+/* Bình luận */
+.post-comments {
+  margin-top: 10px;
+}
+
+.comment-item {
+  background-color: #3a3b3c;
+  padding: 8px 12px;
+  border-radius: 12px;
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+
+.comment-input-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.comment-input-row input {
+  flex: 1;
+  background-color: #3a3b3c;
+  border: none;
+  border-radius: 18px;
+  padding: 8px 14px;
+  color: #e4e6eb;
+  outline: none;
+}
+
+.comment-input-row button {
+  background-color: #2374e1;
+  color: white;
+  border: none;
+  border-radius: 18px;
+  padding: 0 14px;
+  cursor: pointer;
+}
+
+/* Cột phải */
+.sidebar-title {
+  margin-top: 0;
+  color: #b0b3b8;
+}
+
+.friend-request-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.friend-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.friend-info span {
+  font-size: 12px;
+  color: #b0b3b8;
+}
+
+.friend-btns {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+/* Tương thích điện thoại */
+@media (max-width: 960px) {
+  .fb-layout {
+    grid-template-columns: 1fr;
+  }
+  .fb-sidebar-left,
+  .fb-sidebar-right {
+    display: none;
+  }
+}
