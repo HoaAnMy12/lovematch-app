@@ -1,26 +1,179 @@
-/* Bảng màu Tím Pastel Hẹn Hò (Lavender & Soft Rose) */
 :root {
-  --bg-page: #f5f0ff;           /* Nền tím oải hương rất nhạt */
-  --bg-card: #ffffff;           /* Thẻ bài viết trắng tinh */
-  --bg-input: #f2ebff;          /* Ô nhập liệu tím phấn */
-  --bg-hover: #ebe0ff;          /* Hiệu ứng di chuột tím nhạt */
-  --primary-purple: #9d65ff;    /* Tím pastel chủ đạo */
+  --bg-page: #f5f0ff;
+  --bg-card: #ffffff;
+  --bg-input: #f2ebff;
+  --bg-hover: #ebe0ff;
+  --primary-purple: #9d65ff;
   --primary-gradient: linear-gradient(135deg, #a770ef 0%, #cf8bf3 50%, #fdb99b 100%);
-  --text-main: #2d1f47;         /* Chữ tím than đậm dễ đọc */
-  --text-muted: #7c6b99;        /* Chữ phụ tím xám */
-  --border-soft: #e6d9ff;       /* Viền tím pastel mảnh */
-  --heart-pink: #ff5e8e;        /* Màu hồng tim thả thính */
+  --text-main: #2d1f47;
+  --text-muted: #7c6b99;
+  --border-soft: #e6d9ff;
+  --heart-pink: #ff5e8e;
 }
 
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background-color: var(--bg-page);
+  font-family: "Quicksand", "Nunito", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: var(--text-main);
+}
+
+/* MÀN HÌNH ĐĂNG NHẬP / ĐĂNG KÝ TÍM PASTEL */
+.auth-wrapper {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #eadcff 0%, #fce8f6 100%);
+  padding: 20px;
+}
+
+.auth-card {
+  background: #ffffff;
+  width: 100%;
+  max-width: 410px;
+  padding: 32px 28px;
+  border-radius: 24px;
+  box-shadow: 0 12px 35px rgba(157, 101, 255, 0.16);
+  border: 1px solid var(--border-soft);
+  text-align: center;
+}
+
+.auth-logo {
+  font-size: 28px;
+  font-weight: 800;
+  color: #7b3fe4;
+  margin-bottom: 6px;
+}
+
+.auth-subtitle {
+  color: var(--text-muted);
+  font-size: 14px;
+  margin: 0 0 20px 0;
+}
+
+.auth-error {
+  background-color: #fff0f5;
+  color: #d93065;
+  border: 1px solid #ffc2d4;
+  padding: 10px;
+  border-radius: 12px;
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.auth-form input {
+  background-color: var(--bg-input);
+  border: 1px solid transparent;
+  border-radius: 14px;
+  padding: 12px 16px;
+  font-size: 14px;
+  color: var(--text-main);
+  outline: none;
+}
+
+.auth-form input:focus {
+  background-color: #ffffff;
+  border-color: var(--primary-purple);
+}
+
+.avatar-upload-label {
+  background-color: #faf7ff;
+  border: 1.5px dashed #c39eff;
+  color: #7b3fe4;
+  padding: 10px;
+  border-radius: 14px;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.auth-submit-btn {
+  margin-top: 6px;
+  padding: 12px !important;
+  font-size: 15px !important;
+}
+
+.auth-switch {
+  margin-top: 18px;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+.auth-switch span {
+  color: #7b3fe4;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* THANH NAVBAR TRÊN CÙNG */
+.fb-navbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background-color: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border-soft);
+  padding: 10px 28px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.nav-brand {
+  font-size: 22px;
+  font-weight: 800;
+  color: #7b3fe4;
+}
+
+.nav-user-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.nav-profile {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.btn-logout {
+  background-color: #fff0f5;
+  color: #e03e70;
+  border: 1px solid #ffd1e0;
+  padding: 7px 14px;
+  border-radius: 16px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.btn-logout:hover {
+  background-color: #ffe0eb;
+}
+
+/* BỐ CỤC TRANG CHỦ 3 CỘT */
 .fb-layout {
   display: grid;
-  grid-template-columns: 270px 1fr 310px;
+  grid-template-columns: 260px 1fr 300px;
   gap: 24px;
   background: linear-gradient(180deg, #f3ebff 0%, #fcf8ff 100%);
-  color: var(--text-main);
-  min-height: 100vh;
+  min-height: calc(100vh - 60px);
   padding: 24px;
-  font-family: "Quicksand", "Nunito", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 .fb-card {
@@ -30,16 +183,11 @@
   margin-bottom: 18px;
   border: 1px solid var(--border-soft);
   box-shadow: 0 6px 20px rgba(157, 101, 255, 0.08);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.post-card:hover {
-  box-shadow: 0 10px 26px rgba(157, 101, 255, 0.14);
 }
 
 .fb-avatar-sm {
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
   object-fit: cover;
   border: 2px solid #d4baff;
@@ -51,10 +199,9 @@
   border-radius: 50%;
   object-fit: cover;
   border: 2px solid #c39eff;
-  padding: 1px;
 }
 
-/* Cột trái: Menu điều hướng */
+/* Cột trái */
 .fb-menu-item {
   display: flex;
   align-items: center;
@@ -63,7 +210,6 @@
   border-radius: 14px;
   cursor: pointer;
   font-weight: 600;
-  color: var(--text-main);
   margin-bottom: 6px;
   transition: all 0.2s ease;
 }
@@ -71,18 +217,21 @@
 .fb-menu-item:hover {
   background-color: var(--bg-hover);
   color: #7b3fe4;
-  transform: translateX(4px);
 }
 
 .fb-menu-item.active {
   background: var(--primary-gradient);
   color: #ffffff;
-  box-shadow: 0 4px 14px rgba(167, 112, 239, 0.35);
 }
 
-/* Cột giữa: Bảng tin hẹn hò */
+.logout-menu {
+  color: #d93065;
+  margin-top: 12px;
+}
+
+/* Khung đăng bài & xem trước ảnh */
 .fb-feed {
-  max-width: 630px;
+  max-width: 620px;
   width: 100%;
   margin: 0 auto;
 }
@@ -94,32 +243,46 @@
   margin-bottom: 12px;
 }
 
-.create-post-top input,
-.create-post-image-input input {
+.create-post-top input {
   width: 100%;
   background-color: var(--bg-input);
   border: 1px solid transparent;
   border-radius: 24px;
-  padding: 11px 18px;
+  padding: 12px 18px;
   color: var(--text-main);
   font-size: 14px;
   outline: none;
-  transition: border-color 0.2s ease, background-color 0.2s ease;
 }
 
-.create-post-top input:focus,
-.create-post-image-input input:focus {
+.create-post-top input:focus {
   background-color: #ffffff;
   border-color: var(--primary-purple);
 }
 
-.create-post-top input::placeholder,
-.create-post-image-input input::placeholder {
-  color: var(--text-muted);
+.image-preview-wrapper {
+  position: relative;
+  margin-bottom: 12px;
 }
 
-.create-post-image-input {
-  margin-bottom: 14px;
+.image-preview {
+  width: 100%;
+  max-height: 320px;
+  object-fit: cover;
+  border-radius: 14px;
+  border: 1px solid var(--border-soft);
+}
+
+.remove-img-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: rgba(45, 31, 71, 0.75);
+  color: #ffffff;
+  border: none;
+  border-radius: 14px;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
 }
 
 .create-post-bottom {
@@ -128,59 +291,46 @@
   align-items: center;
   border-top: 1px solid var(--border-soft);
   padding-top: 12px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-muted);
 }
 
-.create-post-bottom span {
-  padding: 6px 12px;
-  border-radius: 12px;
+.upload-photo-btn {
+  background-color: var(--bg-input);
+  color: #7b3fe4;
+  padding: 8px 16px;
+  border-radius: 16px;
+  font-size: 13.5px;
+  font-weight: 700;
   cursor: pointer;
 }
 
-.create-post-bottom span:hover {
-  background-color: var(--bg-input);
-  color: #7b3fe4;
+.upload-photo-btn:hover {
+  background-color: var(--bg-hover);
 }
 
-/* Nút bấm chính chuyển sắc tím - hồng */
 .fb-btn-primary {
   background: var(--primary-gradient);
   color: #ffffff;
   border: none;
   padding: 8px 20px;
   border-radius: 20px;
-  font-weight: 600;
+  font-weight: 700;
   font-size: 14px;
   cursor: pointer;
   box-shadow: 0 4px 12px rgba(167, 112, 239, 0.3);
-  transition: opacity 0.2s ease, transform 0.15s ease;
-}
-
-.fb-btn-primary:hover {
-  opacity: 0.92;
-  transform: translateY(-1px);
 }
 
 .fb-btn-secondary {
   background-color: var(--bg-input);
   color: var(--text-muted);
   border: none;
-  padding: 8px 16px;
+  padding: 8px 14px;
   border-radius: 20px;
   font-weight: 600;
-  font-size: 14px;
+  font-size: 13px;
   cursor: pointer;
-  transition: background-color 0.2s ease;
 }
 
-.fb-btn-secondary:hover {
-  background-color: var(--bg-hover);
-  color: var(--text-main);
-}
-
-/* Thẻ bài viết */
+/* Bài viết & Bình luận */
 .post-header {
   display: flex;
   align-items: center;
@@ -191,8 +341,6 @@
 .post-author {
   margin: 0;
   font-size: 15.5px;
-  font-weight: 700;
-  color: var(--text-main);
 }
 
 .post-time {
@@ -201,10 +349,9 @@
 }
 
 .post-content {
-  margin: 0 0 14px 0;
+  margin: 0 0 12px 0;
   line-height: 1.55;
   font-size: 15px;
-  color: #3a2957;
 }
 
 .post-image {
@@ -213,14 +360,12 @@
   object-fit: cover;
   border-radius: 14px;
   margin-bottom: 12px;
-  border: 1px solid var(--border-soft);
 }
 
 .post-stats {
   display: flex;
   justify-content: space-between;
   font-size: 13px;
-  font-weight: 500;
   color: var(--text-muted);
   padding-bottom: 10px;
   border-bottom: 1px solid var(--border-soft);
@@ -237,12 +382,11 @@
   background: transparent;
   border: none;
   color: var(--text-muted);
-  font-weight: 600;
+  font-weight: 700;
   font-size: 14px;
-  padding: 8px 14px;
+  padding: 8px 16px;
   border-radius: 12px;
   cursor: pointer;
-  transition: all 0.2s ease;
 }
 
 .post-actions button:hover {
@@ -255,26 +399,51 @@
   background-color: #fff0f5;
 }
 
-/* Bình luận */
 .post-comments {
   margin-top: 12px;
 }
 
-.comment-item {
-  background-color: var(--bg-input);
-  padding: 9px 14px;
-  border-radius: 14px;
+.comment-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   margin-bottom: 8px;
-  font-size: 14px;
-  color: var(--text-main);
 }
 
-.comment-item strong {
+.comment-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1.5px solid #d4baff;
+}
+
+.comment-item {
+  background-color: var(--bg-input);
+  padding: 8px 14px;
+  border-radius: 14px;
+  font-size: 13.5px;
+  flex: 1;
+}
+
+.comment-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+
+.comment-header strong {
   color: #6b35d6;
+}
+
+.comment-time {
+  font-size: 11px;
+  color: var(--text-muted);
 }
 
 .comment-input-row {
   display: flex;
+  align-items: center;
   gap: 8px;
   margin-top: 10px;
 }
@@ -285,7 +454,7 @@
   border: 1px solid transparent;
   border-radius: 20px;
   padding: 9px 16px;
-  color: var(--text-main);
+  font-size: 13.5px;
   outline: none;
 }
 
@@ -299,24 +468,20 @@
   color: #ffffff;
   border: none;
   border-radius: 20px;
-  padding: 0 18px;
-  font-weight: 600;
+  padding: 8px 16px;
+  font-weight: 700;
   cursor: pointer;
 }
 
-/* Cột phải: Gợi ý kết đôi */
+/* Cột phải */
 .sidebar-title {
-  margin-top: 0;
-  margin-bottom: 14px;
-  font-size: 15px;
-  font-weight: 700;
+  margin: 0 0 14px 0;
   color: #6b35d6;
 }
 
 .friend-request-item {
   display: flex;
   gap: 12px;
-  align-items: flex-start;
   padding: 10px;
   border-radius: 14px;
   background-color: #faf7ff;
@@ -327,11 +492,6 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-}
-
-.friend-info strong {
-  color: var(--text-main);
-  font-size: 14.5px;
 }
 
 .friend-info span {
@@ -345,7 +505,6 @@
   margin-top: 6px;
 }
 
-/* Tương thích điện thoại */
 @media (max-width: 960px) {
   .fb-layout {
     grid-template-columns: 1fr;

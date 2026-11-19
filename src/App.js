@@ -1,145 +1,151 @@
-import React from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { useApp } from "./AppContext";
-
-import Login from "./Login";
-import Register from "./Register";
-import AuthForm from "./AuthForm";
+import React, { useState, useEffect } from "react";
 import Home from "./Home";
-import Profile from "./Profile";
-import EditProfile from "./EditProfile";
-import ChatBox from "./ChatBox";
-import Match from "./Match";
-import MatchList from "./MatchList";
-import Notifications from "./Notifications";
+import "./Home.css";
 
-// Bảo vệ các trang yêu cầu đăng nhập
-function ProtectedRoute({ children }) {
-  const { isAuthenticated } = useApp();
-  return isAuthenticated ? children : <Navigate to="/login" replace />;
-}
+export default function App() {
+  const [currentUser, setCurrentUser] = useState(null);
+  const [isRegister, setIsRegister] = useState(false);
 
-// Chuyển hướng nếu người dùng đã đăng nhập mà vẫn truy cập trang Login/Register
-function PublicRoute({ children }) {
-  const { isAuthenticated } = useApp();
-  return isAuthenticated ? <Navigate to="/home" replace /> : children;
-}
+  // State biểu mẫu đăng nhập / đăng ký
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
 
-function App() {
+  // Kiểm tra trạng thái đăng nhập khi tải trang
+  useEffect(() => {
+    const savedUser = localStorage.getItem("lovematch_current_user");
+    if (savedUser) {
+      try {
+        setCurrentUser(JSON.parse(savedUser));
+      } catch (e) {
+        localStorage.removeItem("lovematch_current_user");
+      }
+    }
+  }, []);
+
+  // Xử lý chọn ảnh đại diện từ máy khi đăng ký
+  const handleAvatarFile = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setAvatarUrl(reader.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Xử lý Đăng ký / Đăng nhập
+  const handleAuthSubmit = (e) => {
+    e.preventDefault();
+    setErrorMsg("");
+
+    const usersList = JSON.parse(localStorage.getItem("lovematch_users") || "[]");
+
+    if (isRegister) {
+      // ĐĂNG KÝ TÀI KHOẢN MỚI
+      if (!name.trim() || !email.trim() || !password.trim()) {
+        setErrorMsg("Vui lòng nhập đầy đủ họ tên, email và mật khẩu.");
+        return;
+      }
+      const exists = usersList.some((u) => u.email.toLowerCase() === email.toLowerCase());
+      if (exists) {
+        setErrorMsg("Email này đã được đăng ký. Hãy chuyển sang Đăng nhập!");
+        return;
+      }
+
+      const newUser = {
+        id: "user_" + Date.now(),
+        name: name.trim(),
+        email: email.trim(),
+        password: password,
+        avatar: avatarUrl || `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(name)}`,
+      };
+
+      const updatedUsers = [...usersList, newUser];
+      localStorage.setItem("lovematch_users", JSON.stringify(updatedUsers));
+      localStorage.setItem("lovematch_current_user", JSON.stringify(newUser));
+      setCurrentUser(newUser);
+    } else {
+      // ĐĂNG NHẬP
+      const foundUser = usersList.find(
+        (u) => u.email.toLowerCase() === email.trim().toLowerCase() && u.password === password
+      );
+      if (!foundUser) {
+        setErrorMsg("Sai email hoặc mật khẩu! Nếu chưa có tài khoản, hãy bấm Đăng ký.");
+        return;
+      }
+      localStorage.setItem("lovematch_current_user", JSON.stringify(foundUser));
+      setCurrentUser(foundUser);
+    }
+  };
+
+  // Xử lý Đăng xuất
+  const handleLogout = () => {
+    localStorage.removeItem("lovematch_current_user");
+    setCurrentUser(null);
+    setEmail("");
+    setPassword("");
+  };
+
+  // Nếu đã đăng nhập -> Hiển thị Trang chủ Bảng tin Hẹn hò
+  if (currentUser) {
+    return <Home currentUser={currentUser} onLogout={handleLogout} />;
+  }
+
+  // Nếu chưa đăng nhập -> Hiển thị màn hình Đăng nhập / Đăng ký Tím Pastel
   return (
-    <BrowserRouter>
-      <Routes>
-        {/* ĐĂNG NHẬP / ĐĂNG KÝ */}
-        <Route
-          path="/"
-          element={
-            <PublicRoute>
-              <Login />
-            </PublicRoute>
-          }
-        />
-        <Route
-          path="/login"
-          element={
-            <PublicRoute>
-              <Login />
-            </PublicRoute>
-          }
-        />
-        <Route
-          path="/register"
-          element={
-            <PublicRoute>
-              <Register />
-            </PublicRoute>
-          }
-        />
-        <Route
-          path="/auth"
-          element={
-            <PublicRoute>
-              <AuthForm />
-            </PublicRoute>
-          }
-        />
+    <div className="auth-wrapper">
+      <div className="auth-card">
+        <div className="auth-logo">💜 LoveMatch</div>
+        <p className="auth-subtitle">
+          {isRegister ? "Tạo hồ sơ hẹn hò & kết nối ngay hôm nay" : "Đăng nhập để xem bảng tin & trò chuyện"}
+        </p>
 
-        {/* TRANG CHÍNH (KHÁM PHÁ & TÌM KIẾM) */}
-        <Route
-          path="/home"
-          element={
-            <ProtectedRoute>
-              <Home />
-            </ProtectedRoute>
-          }
-        />
+        {errorMsg && <div className="auth-error">{errorMsg}</div>}
 
-        {/* HỒ SƠ CÁ NHÂN */}
-        <Route
-          path="/profile"
-          element={
-            <ProtectedRoute>
-              <Profile />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/edit-profile"
-          element={
-            <ProtectedRoute>
-              <EditProfile />
-            </ProtectedRoute>
-          }
-        />
+        <form onSubmit={handleAuthSubmit} className="auth-form">
+          {isRegister && (
+            <>
+              <input
+                type="text"
+                placeholder="Tên hiển thị của bạn (VD: Hoaa Maii)"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+              <label className="avatar-upload-label">
+                <span>📷 {avatarUrl ? "Đã chọn ảnh đại diện" : "Chọn ảnh đại diện từ máy (tùy chọn)"}</span>
+                <input type="file" accept="image/*" onChange={handleAvatarFile} hidden />
+              </label>
+            </>
+          )}
 
-        {/* NHẮN TIN REAL-TIME & BẠN BÈ */}
-        <Route
-          path="/chat"
-          element={
-            <ProtectedRoute>
-              <ChatBox />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/chat/:userId"
-          element={
-            <ProtectedRoute>
-              <ChatBox />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/match"
-          element={
-            <ProtectedRoute>
-              <Match />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/match-list"
-          element={
-            <ProtectedRoute>
-              <MatchList />
-            </ProtectedRoute>
-          }
-        />
+          <input
+            type="email"
+            placeholder="Địa chỉ Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+          <input
+            type="password"
+            placeholder="Mật khẩu"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
 
-        {/* THÔNG BÁO */}
-        <Route
-          path="/notifications"
-          element={
-            <ProtectedRoute>
-              <Notifications />
-            </ProtectedRoute>
-          }
-        />
+          <button type="submit" className="fb-btn-primary auth-submit-btn">
+            {isRegister ? "Đăng ký ngay" : "Đăng nhập"}
+          </button>
+        </form>
 
-        {/* FALLBACK 404 */}
-        <Route path="*" element={<Navigate to="/home" replace />} />
-      </Routes>
-    </BrowserRouter>
+        <div className="auth-switch">
+          {isRegister ? "Đã có tài khoản? " : "Chưa có tài khoản hẹn hò? "}
+          <span onClick={() => { setIsRegister(!isRegister); setErrorMsg(""); }}>
+            {isRegister ? "Đăng nhập" : "Đăng ký miễn phí"}
+          </span>
+        </div>
+      </div>
+    </div>
   );
 }
-
-export default App;
