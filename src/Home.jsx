@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
+import { useApp, DEFAULT_AVATAR } from "./AppContext";
 import {
   collection,
   addDoc,
   doc,
+  setDoc,
   updateDoc,
   onSnapshot,
   query,
@@ -14,119 +17,142 @@ import {
 import { db } from "./firebase";
 import "./Home.css";
 
-const getChatRoomId = (id1, id2) => [id1, id2].sort().join("_");
+// Chuyển email thành ID tài liệu an toàn trên Firestore
+const emailToDocId = (email) =>
+  (email || "guest").trim().toLowerCase().replace(/[^a-z0-9]/g, "_");
 
-export default function Home({ currentUser, onLogout, onUpdateProfile, compressImage }) {
-  const [activeTab, setActiveTab] = useState("feed"); // 'feed' | 'friends' | 'profile'
+// Nén ảnh chọn từ máy để lưu mượt lên Firestore (< 1MB)
+const compressImage = (file, maxWidth = 720) =>
+  new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const scale = Math.min(1, maxWidth / img.width);
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", 0.78));
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
 
-  // Danh sách toàn bộ người dùng thật trên Firebase
-  const [allUsers, setAllUsers] = useState([]);
-  const [friendIds, setFriendIds] = useState(currentUser.friends || []);
+export default function Home() {
+  const navigate = useNavigate();
+  const {
+    currentUser,
+    logoutUser,
+    friends,
+    addFriend,
+    removeFriend,
+    isFriend,
+    discoverProfiles,
+  } = useApp();
+
+  const user = currentUser || {
+    name: "Thành viên LoveMatch",
+    email: "user@lovematch.vn",
+    avatar: DEFAULT_AVATAR,
+    age: 21,
+    location: "Việt Nam",
+  };
 
   // Danh sách bài viết công khai trên Firebase (mọi người đều xem được bài của nhau)
   const [posts, setPosts] = useState([]);
+  // Danh sách người dùng thật đã đăng ký/đăng nhập trên Firebase
+  const [firebaseUsers, setFirebaseUsers] = useState([]);
+
+  // Trạng thái đăng bài
   const [newContent, setNewContent] = useState("");
   const [selectedImage, setSelectedImage] = useState("");
   const [posting, setPosting] = useState(false);
   const [commentInputs, setCommentInputs] = useState({});
   const postFileInputRef = useRef(null);
 
-  // Chỉnh sửa trang cá nhân
-  const [isEditingProfile, setIsEditingProfile] = useState(false);
-  const [editName, setEditName] = useState(currentUser.name || "");
-  const [editBio, setEditBio] = useState(currentUser.bio || "");
-  const [editLocation, setEditLocation] = useState(currentUser.location || "");
-  const [editHobbies, setEditHobbies] = useState(currentUser.hobbies || "");
-  const [editAvatar, setEditAvatar] = useState(currentUser.avatar || "");
+  // 1. Đồng bộ thông tin người dùng hiện tại lên Firestore để người khác tìm thấy & kết bạn
+  useEffect(() => {
+    if (!user.email) return;
+    const myDocId = emailToDocId(user.email);
+    setDoc(
+      doc(db, "users", myDocId),
+      {
+        id: myDocId,
+        name: user.name,
+        email: user.email.trim().toLowerCase(),
+        avatar: user.avatar || DEFAULT_AVATAR,
+        age: user.age || 21,
+        location: user.location || "Việt Nam",
+        bio: user.description || "Rất vui được làm quen với mọi người 💜",
+        lastActive: serverTimestamp(),
+      },
+      { merge: true }
+    ).catch((err) => console.error("Lỗi đồng bộ user:", err));
+  }, [user.email, user.name, user.avatar, user.age, user.location, user.description]);
 
-  // Hộp thoại nhắn tin làm quen Real-time
-  const [chatPartner, setChatPartner] = useState(null);
-  const [chatMessages, setChatMessages] = useState([]);
-  const [chatInput, setChatInput] = useState("");
-
-  // 1. Lắng nghe danh sách tất cả thành viên trên Firestore
+  // 2. Lắng nghe danh sách thành viên thật trên Firestore
   useEffect(() => {
     const unsubUsers = onSnapshot(collection(db, "users"), (snapshot) => {
-      const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
-      setAllUsers(list);
-
-      const me = list.find((u) => u.id === currentUser.id);
-      if (me && Array.isArray(me.friends)) {
-        setFriendIds(me.friends);
-      }
+      const list = snapshot.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .filter(
+          (u) =>
+            u.email &&
+            user.email &&
+            u.email.toLowerCase() !== user.email.toLowerCase()
+        );
+      setFirebaseUsers(list);
     });
     return () => unsubUsers();
-  }, [currentUser.id]);
+  }, [user.email]);
 
-  // 2. Lắng nghe bảng tin bài viết của tất cả mọi người theo thời gian thực
+  // 3. Lắng nghe bảng tin bài viết của TẤT CẢ mọi người theo thời gian thực
   useEffect(() => {
     const q = query(collection(db, "posts"), orderBy("timestamp", "desc"));
-    const unsubPosts = onSnapshot(q, (snapshot) => {
-      const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
-      setPosts(list);
-    });
+    const unsubPosts = onSnapshot(
+      q,
+      (snapshot) => {
+        const livePosts = snapshot.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        }));
+        setPosts(livePosts);
+      },
+      (err) => {
+        console.error("Lỗi tải bảng tin Firebase:", err);
+      }
+    );
     return () => unsubPosts();
   }, []);
 
-  // 3. Lắng nghe tin nhắn trực tiếp với người đang chat
-  useEffect(() => {
-    if (!chatPartner) {
-      setChatMessages([]);
-      return;
-    }
-    const roomId = getChatRoomId(currentUser.id, chatPartner.id);
-    const q = query(
-      collection(db, "chats", roomId, "messages"),
-      orderBy("createdAt", "asc")
-    );
-    const unsubChat = onSnapshot(q, (snapshot) => {
-      setChatMessages(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+  // Gộp danh sách gợi ý kết bạn (ưu tiên thành viên thật trên Firebase + hồ sơ gợi ý)
+  const suggestedPeople = React.useMemo(() => {
+    const map = new Map();
+    [...firebaseUsers, ...discoverProfiles].forEach((p) => {
+      const key = (p.email || String(p.id)).toLowerCase();
+      if (
+        key !== (user.email || "").toLowerCase() &&
+        !isFriend(p.id) &&
+        !isFriend(p.email)
+      ) {
+        map.set(key, p);
+      }
     });
-    return () => unsubChat();
-  }, [chatPartner, currentUser.id]);
+    return Array.from(map.values());
+  }, [firebaseUsers, discoverProfiles, user.email, isFriend]);
 
-  // Lọc danh sách bạn bè & gợi ý kết bạn
-  const otherUsers = allUsers.filter((u) => u.id !== currentUser.id);
-  const myFriends = otherUsers.filter((u) => friendIds.includes(u.id));
-  const suggestedUsers = otherUsers.filter((u) => !friendIds.includes(u.id));
-
-  // Thêm bạn bè
-  const handleAddFriend = async (targetId) => {
-    try {
-      await updateDoc(doc(db, "users", currentUser.id), {
-        friends: arrayUnion(targetId),
-      });
-    } catch (err) {
-      console.error("Lỗi thêm bạn:", err);
-    }
-  };
-
-  // Xóa bạn bè
-  const handleRemoveFriend = async (targetId) => {
-    try {
-      await updateDoc(doc(db, "users", currentUser.id), {
-        friends: arrayRemove(targetId),
-      });
-    } catch (err) {
-      console.error("Lỗi xóa bạn:", err);
-    }
-  };
-
-  // Chọn ảnh trực tiếp từ trong máy để đăng bài
+  // Chọn ảnh từ trong máy để đăng bài
   const handleSelectPostImage = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const compressed = compressImage
-      ? await compressImage(file, 720)
-      : await new Promise((res) => {
-          const r = new FileReader();
-          r.onloadend = () => res(r.result);
-          r.readAsDataURL(file);
-        });
+    const compressed = await compressImage(file, 720);
     setSelectedImage(compressed);
   };
 
-  // Đăng bài viết lên bảng tin chung
+  // Đăng bài viết lên bảng tin chung (mọi người đều xem được)
   const handleCreatePost = async (e) => {
     e.preventDefault();
     if (!newContent.trim() && !selectedImage) return;
@@ -139,9 +165,9 @@ export default function Home({ currentUser, onLogout, onUpdateProfile, compressI
 
     try {
       await addDoc(collection(db, "posts"), {
-        authorId: currentUser.id,
-        authorName: currentUser.name,
-        authorAvatar: currentUser.avatar,
+        authorEmail: (user.email || "").trim().toLowerCase(),
+        authorName: user.name,
+        authorAvatar: user.avatar || DEFAULT_AVATAR,
         createdAt: timeLabel,
         timestamp: Date.now(),
         content: newContent.trim(),
@@ -155,26 +181,28 @@ export default function Home({ currentUser, onLogout, onUpdateProfile, compressI
       if (postFileInputRef.current) postFileInputRef.current.value = "";
     } catch (err) {
       console.error("Lỗi đăng bài:", err);
-      alert("Không thể đăng bài. Hãy thử ảnh dung lượng nhẹ hơn!");
+      alert("Đăng bài thất bại! Bạn hãy thử chọn ảnh nhẹ hơn nhé.");
     } finally {
       setPosting(false);
     }
   };
 
-  // Thả tim bài viết
+  // Thả tim / Bỏ thích bài viết của mình hoặc người khác
   const handleToggleLike = async (post) => {
+    const userKey = (user.email || user.name).toLowerCase();
     const likes = Array.isArray(post.likes) ? post.likes : [];
-    const hasLiked = likes.includes(currentUser.id);
+    const hasLiked = likes.includes(userKey);
+
     try {
       await updateDoc(doc(db, "posts", post.id), {
-        likes: hasLiked ? arrayRemove(currentUser.id) : arrayUnion(currentUser.id),
+        likes: hasLiked ? arrayRemove(userKey) : arrayUnion(userKey),
       });
     } catch (err) {
-      console.error("Lỗi thả tim:", err);
+      console.error("Lỗi thả tim bài viết:", err);
     }
   };
 
-  // Viết bình luận lên bài viết
+  // Viết bình luận vào bài viết của mình hoặc người khác
   const handleAddComment = async (postId) => {
     const text = (commentInputs[postId] || "").trim();
     if (!text) return;
@@ -186,9 +214,9 @@ export default function Home({ currentUser, onLogout, onUpdateProfile, compressI
 
     const newComment = {
       id: "c_" + Date.now(),
-      userId: currentUser.id,
-      userName: currentUser.name,
-      userAvatar: currentUser.avatar,
+      userEmail: (user.email || "").toLowerCase(),
+      userName: user.name,
+      userAvatar: user.avatar || DEFAULT_AVATAR,
       text,
       time: timeStr,
     };
@@ -203,490 +231,417 @@ export default function Home({ currentUser, onLogout, onUpdateProfile, compressI
     }
   };
 
-  // Chọn ảnh đại diện từ máy khi sửa trang cá nhân
-  const handleEditAvatarFile = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const compressed = compressImage ? await compressImage(file, 300) : "";
-    if (compressed) setEditAvatar(compressed);
-  };
-
-  // Lưu chỉnh sửa trang cá nhân
-  const handleSaveProfile = async (e) => {
-    e.preventDefault();
-    const updatedFields = {
-      name: editName.trim() || currentUser.name,
-      bio: editBio.trim(),
-      location: editLocation.trim(),
-      hobbies: editHobbies.trim(),
-      avatar: editAvatar || currentUser.avatar,
+  // Kết bạn với tác giả bài viết hoặc thành viên khác
+  const handleAddFriendPerson = (person) => {
+    const friendObj = {
+      id: person.email || person.id,
+      email: person.email || `${person.id}@lovematch.vn`,
+      name: person.name,
+      avatar: person.avatar || person.image || DEFAULT_AVATAR,
+      age: person.age || 21,
+      location: person.location || "Việt Nam",
+      isOnline: true,
     };
-    await onUpdateProfile(updatedFields);
-    setIsEditingProfile(false);
+    addFriend(friendObj);
   };
 
-  // Gửi tin nhắn làm quen thật qua Firestore
-  const handleSendMessage = async (e) => {
-    e.preventDefault();
-    if (!chatInput.trim() || !chatPartner) return;
+  // Xóa bạn bè
+  const handleRemoveFriendPerson = (personIdOrEmail) => {
+    removeFriend(personIdOrEmail);
+  };
 
-    const roomId = getChatRoomId(currentUser.id, chatPartner.id);
-    const now = new Date();
-    const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(
-      now.getMinutes()
-    ).padStart(2, "0")}`;
-    const cleanMsg = chatInput.trim();
-    setChatInput("");
-
-    try {
-      await addDoc(collection(db, "chats", roomId, "messages"), {
-        senderId: currentUser.id,
-        senderName: currentUser.name,
-        text: cleanMsg,
-        time: timeStr,
-        createdAt: serverTimestamp(),
-      });
-    } catch (err) {
-      console.error("Lỗi gửi tin nhắn:", err);
+  // Nhắn tin trực tiếp với một người (tự động thêm vào danh bạ chat và chuyển sang /chat)
+  const handleOpenChatWith = (person) => {
+    const targetEmail = person.email || `${person.id}@lovematch.vn`;
+    const friendObj = {
+      id: targetEmail,
+      email: targetEmail,
+      name: person.name,
+      avatar: person.avatar || person.image || DEFAULT_AVATAR,
+      age: person.age || 21,
+      location: person.location || "Việt Nam",
+      isOnline: true,
+    };
+    if (!isFriend(friendObj.id) && !isFriend(targetEmail)) {
+      addFriend(friendObj);
     }
+    navigate(`/chat/${encodeURIComponent(targetEmail)}`);
   };
 
-  // Lọc bài viết (Trang cá nhân chỉ hiện bài của mình, Bảng tin hiện bài của tất cả mọi người)
-  const displayedPosts =
-    activeTab === "profile"
-      ? posts.filter((p) => p.authorId === currentUser.id)
-      : posts;
+  const handleLogout = () => {
+    logoutUser();
+    navigate("/login");
+  };
 
   return (
     <div className="fb-page-container">
       {/* THANH NAVBAR TRÊN CÙNG */}
       <header className="fb-navbar">
-        <div className="nav-brand" onClick={() => setActiveTab("feed")}>
+        <div
+          className="nav-brand"
+          style={{ cursor: "pointer" }}
+          onClick={() => navigate("/home")}
+        >
           💜 LoveMatch
         </div>
 
         <div className="nav-center-tabs">
           <button
-            className={`nav-tab-btn ${activeTab === "feed" ? "active" : ""}`}
-            onClick={() => setActiveTab("feed")}
+            className="nav-tab-btn active"
+            onClick={() => navigate("/home")}
           >
             🏠 Bảng tin
           </button>
           <button
-            className={`nav-tab-btn ${activeTab === "friends" ? "active" : ""}`}
-            onClick={() => setActiveTab("friends")}
+            className="nav-tab-btn"
+            onClick={() => navigate("/match-list")}
           >
-            👥 Bạn bè ({myFriends.length})
+            👥 Bạn bè ({friends.length})
           </button>
-          <button
-            className={`nav-tab-btn ${activeTab === "profile" ? "active" : ""}`}
-            onClick={() => setActiveTab("profile")}
-          >
+          <button className="nav-tab-btn" onClick={() => navigate("/chat")}>
+            💬 Nhắn tin
+          </button>
+          <button className="nav-tab-btn" onClick={() => navigate("/profile")}>
             👤 Trang cá nhân
           </button>
         </div>
 
         <div className="nav-user-actions">
-          <div className="nav-profile" onClick={() => setActiveTab("profile")}>
-            <img src={currentUser.avatar} alt="avatar" className="fb-avatar-sm" />
-            <span>{currentUser.name}</span>
+          <div
+            className="nav-profile"
+            style={{ cursor: "pointer" }}
+            onClick={() => navigate("/profile")}
+          >
+            <img
+              src={user.avatar || DEFAULT_AVATAR}
+              alt="avatar"
+              className="fb-avatar-sm"
+            />
+            <span>{user.name}</span>
           </div>
-          <button onClick={onLogout} className="btn-logout">
+          <button onClick={handleLogout} className="btn-logout">
             Đăng xuất
           </button>
         </div>
       </header>
 
-      {/* BỐ CỤC 3 CỘT GIỐNG FACEBOOK */}
+      {/* BỐ CỤC 3 CỘT */}
       <div className="fb-layout">
-        {/* CỘT TRÁI */}
+        {/* CỘT TRÁI: MENU */}
         <aside className="fb-sidebar-left">
-          <div
-            className={`fb-menu-item ${activeTab === "profile" ? "active" : ""}`}
-            onClick={() => setActiveTab("profile")}
-          >
-            <img src={currentUser.avatar} alt="avatar" className="fb-avatar-sm" />
-            <span>{currentUser.name}</span>
+          <div className="fb-menu-item" onClick={() => navigate("/profile")}>
+            <img
+              src={user.avatar || DEFAULT_AVATAR}
+              alt="avatar"
+              className="fb-avatar-sm"
+            />
+            <span>{user.name}</span>
           </div>
           <div
-            className={`fb-menu-item ${activeTab === "feed" ? "active" : ""}`}
-            onClick={() => setActiveTab("feed")}
+            className="fb-menu-item active"
+            onClick={() => navigate("/home")}
           >
             💜 Bảng tin hẹn hò
           </div>
           <div
-            className={`fb-menu-item ${activeTab === "friends" ? "active" : ""}`}
-            onClick={() => setActiveTab("friends")}
+            className="fb-menu-item"
+            onClick={() => navigate("/edit-profile")}
           >
-            👥 Quản lý bạn bè ({myFriends.length})
+            ✏️ Sửa trang cá nhân
           </div>
-          {otherUsers.length > 0 && (
-            <div
-              className="fb-menu-item"
-              onClick={() => setChatPartner(myFriends[0] || otherUsers[0])}
-            >
-              💌 Tin nhắn làm quen
-            </div>
-          )}
-          <div className="fb-menu-item logout-menu" onClick={onLogout}>
+          <div
+            className="fb-menu-item"
+            onClick={() => navigate("/match-list")}
+          >
+            👥 Quản lý bạn bè ({friends.length})
+          </div>
+          <div className="fb-menu-item" onClick={() => navigate("/chat")}>
+            💌 Tin nhắn làm quen
+          </div>
+          <div className="fb-menu-item logout-menu" onClick={handleLogout}>
             🚪 Đăng xuất
           </div>
         </aside>
 
-        {/* CỘT GIỮA */}
+        {/* CỘT GIỮA: KHUNG ĐĂNG BÀI & BẢNG TIN MỌI NGƯỜI */}
         <main className="fb-feed">
-          {/* TAB TRANG CÁ NHÂN & SỬA HỒ SƠ */}
-          {activeTab === "profile" && (
-            <div className="fb-card profile-header-card">
-              <div className="profile-cover"></div>
-              <div className="profile-info-top">
-                <img src={currentUser.avatar} alt="avatar" className="profile-big-avatar" />
-                <div className="profile-main-text">
-                  <h2>{currentUser.name}</h2>
-                  <p className="profile-bio">{currentUser.bio}</p>
-                  <div className="profile-tags">
-                    <span>📍 {currentUser.location || "Việt Nam"}</span>
-                    <span>✨ {currentUser.hobbies || "Kết bạn & Hẹn hò"}</span>
-                    <span>💜 {myFriends.length} bạn bè</span>
-                  </div>
-                </div>
+          {/* Khung đăng bài mới */}
+          <div className="fb-card create-post-box">
+            <div className="create-post-top">
+              <img
+                src={user.avatar || DEFAULT_AVATAR}
+                alt="avatar"
+                className="fb-avatar-md"
+              />
+              <input
+                type="text"
+                placeholder={`${user.name} ơi, hôm nay bạn muốn chia sẻ điều gì với mọi người?`}
+                value={newContent}
+                onChange={(e) => setNewContent(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleCreatePost(e)}
+              />
+            </div>
+
+            {selectedImage && (
+              <div className="image-preview-wrapper">
+                <img
+                  src={selectedImage}
+                  alt="preview"
+                  className="image-preview"
+                />
                 <button
-                  className="fb-btn-primary"
+                  type="button"
+                  className="remove-img-btn"
                   onClick={() => {
-                    setEditName(currentUser.name || "");
-                    setEditBio(currentUser.bio || "");
-                    setEditLocation(currentUser.location || "");
-                    setEditHobbies(currentUser.hobbies || "");
-                    setEditAvatar(currentUser.avatar || "");
-                    setIsEditingProfile(!isEditingProfile);
+                    setSelectedImage("");
+                    if (postFileInputRef.current)
+                      postFileInputRef.current.value = "";
                   }}
                 >
-                  ✏️ {isEditingProfile ? "Đóng chỉnh sửa" : "Sửa trang cá nhân"}
+                  ✕ Xóa ảnh
                 </button>
               </div>
+            )}
 
-              {isEditingProfile && (
-                <form onSubmit={handleSaveProfile} className="edit-profile-form">
-                  <h4>Chỉnh sửa thông tin cá nhân</h4>
-                  <div className="edit-avatar-row">
-                    <img src={editAvatar} alt="preview" className="fb-avatar-md" />
-                    <label className="upload-photo-btn">
-                      📷 Chọn ảnh đại diện mới từ máy
-                      <input type="file" accept="image/*" onChange={handleEditAvatarFile} hidden />
-                    </label>
-                  </div>
-                  <label>Tên hiển thị:</label>
-                  <input
-                    type="text"
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
-                  />
-                  <label>Tiểu sử hẹn hò (Bio):</label>
-                  <input
-                    type="text"
-                    value={editBio}
-                    onChange={(e) => setEditBio(e.target.value)}
-                  />
-                  <label>Khu vực / Thành phố:</label>
-                  <input
-                    type="text"
-                    value={editLocation}
-                    onChange={(e) => setEditLocation(e.target.value)}
-                  />
-                  <label>Sở thích:</label>
-                  <input
-                    type="text"
-                    value={editHobbies}
-                    onChange={(e) => setEditHobbies(e.target.value)}
-                  />
-                  <div className="edit-form-actions">
-                    <button type="submit" className="fb-btn-primary">
-                      💾 Lưu thay đổi
-                    </button>
-                    <button
-                      type="button"
-                      className="fb-btn-secondary"
-                      onClick={() => setIsEditingProfile(false)}
-                    >
-                      Hủy
-                    </button>
-                  </div>
-                </form>
-              )}
-            </div>
-          )}
-
-          {/* TAB QUẢN LÝ BẠN BÈ (THÊM BẠN & XÓA BẠN) */}
-          {activeTab === "friends" && (
-            <>
-              <div className="fb-card">
-                <h3 className="section-heading">💜 Bạn bè của bạn ({myFriends.length})</h3>
-                {myFriends.length === 0 ? (
-                  <p className="empty-text">
-                    Bạn chưa có bạn bè nào. Hãy kết bạn ở danh sách bên dưới nhé!
-                  </p>
-                ) : (
-                  <div className="friends-grid">
-                    {myFriends.map((friend) => (
-                      <div key={friend.id} className="friend-card-box">
-                        <img src={friend.avatar} alt={friend.name} className="fb-avatar-md" />
-                        <div className="friend-card-info">
-                          <strong>{friend.name}</strong>
-                          <span>{friend.location || "Việt Nam"}</span>
-                          <div className="friend-card-actions">
-                            <button
-                              className="fb-btn-primary btn-sm"
-                              onClick={() => setChatPartner(friend)}
-                            >
-                              💌 Nhắn tin
-                            </button>
-                            <button
-                              className="btn-danger-soft btn-sm"
-                              onClick={() => handleRemoveFriend(friend.id)}
-                            >
-                              🗑️ Xóa bạn
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="fb-card">
-                <h3 className="section-heading">✨ Mọi người trên LoveMatch</h3>
-                {suggestedUsers.length === 0 ? (
-                  <p className="empty-text">Chưa có thêm thành viên mới.</p>
-                ) : (
-                  <div className="friends-grid">
-                    {suggestedUsers.map((person) => (
-                      <div key={person.id} className="friend-card-box">
-                        <img src={person.avatar} alt={person.name} className="fb-avatar-md" />
-                        <div className="friend-card-info">
-                          <strong>{person.name}</strong>
-                          <span>{person.bio || person.location}</span>
-                          <div className="friend-card-actions">
-                            <button
-                              className="fb-btn-primary btn-sm"
-                              onClick={() => handleAddFriend(person.id)}
-                            >
-                              ➕ Thêm bạn bè
-                            </button>
-                            <button
-                              className="fb-btn-secondary btn-sm"
-                              onClick={() => setChatPartner(person)}
-                            >
-                              💌 Làm quen
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-
-          {/* KHUNG ĐĂNG BÀI KÈM CHỌN ẢNH TRỰC TIẾP TỪ MÁY */}
-          {(activeTab === "feed" || activeTab === "profile") && (
-            <div className="fb-card create-post-box">
-              <div className="create-post-top">
-                <img src={currentUser.avatar} alt="avatar" className="fb-avatar-md" />
+            <div className="create-post-bottom">
+              <label className="upload-photo-btn">
+                🖼️ Chọn ảnh từ máy
                 <input
-                  type="text"
-                  placeholder={`${currentUser.name} ơi, bạn đang nghĩ gì thế?`}
-                  value={newContent}
-                  onChange={(e) => setNewContent(e.target.value)}
+                  ref={postFileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleSelectPostImage}
+                  hidden
                 />
-              </div>
-
-              {selectedImage && (
-                <div className="image-preview-wrapper">
-                  <img src={selectedImage} alt="preview" className="image-preview" />
-                  <button
-                    type="button"
-                    className="remove-img-btn"
-                    onClick={() => {
-                      setSelectedImage("");
-                      if (postFileInputRef.current) postFileInputRef.current.value = "";
-                    }}
-                  >
-                    ✕ Xóa ảnh
-                  </button>
-                </div>
-              )}
-
-              <div className="create-post-bottom">
-                <label className="upload-photo-btn">
-                  🖼️ Chọn ảnh từ trong máy
-                  <input
-                    ref={postFileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleSelectPostImage}
-                    hidden
-                  />
-                </label>
-                <button
-                  onClick={handleCreatePost}
-                  className="fb-btn-primary"
-                  disabled={posting}
-                >
-                  {posting ? "Đang đăng..." : "Đăng bài"}
-                </button>
-              </div>
+              </label>
+              <button
+                onClick={handleCreatePost}
+                className="fb-btn-primary"
+                disabled={posting}
+              >
+                {posting ? "Đang đăng..." : "Đăng bài"}
+              </button>
             </div>
-          )}
+          </div>
 
-          {/* BẢNG TIN BÀI VIẾT CỦA MỌI NGƯỜI */}
-          {(activeTab === "feed" || activeTab === "profile") &&
-            (displayedPosts.length === 0 ? (
-              <div className="fb-card" style={{ textAlign: "center", color: "#7c6b99" }}>
-                Chưa có bài viết nào. Hãy là người đầu tiên đăng bài nhé 💜
-              </div>
-            ) : (
-              displayedPosts.map((post) => {
-                const likesList = Array.isArray(post.likes) ? post.likes : [];
-                const commentsList = Array.isArray(post.comments) ? post.comments : [];
-                const isLiked = likesList.includes(currentUser.id);
-                const isMyPost = post.authorId === currentUser.id;
-                const isFriend = friendIds.includes(post.authorId);
+          {/* Danh sách bài viết công khai của tất cả người dùng */}
+          {posts.length === 0 ? (
+            <div
+              className="fb-card"
+              style={{ textAlign: "center", color: "#7c6b99" }}
+            >
+              Chưa có bài viết nào trên bảng tin. Hãy đăng bài đầu tiên để mọi
+              người cùng xem, thả tim và bình luận nhé 💜
+            </div>
+          ) : (
+            posts.map((post) => {
+              const userKey = (user.email || user.name).toLowerCase();
+              const likesList = Array.isArray(post.likes) ? post.likes : [];
+              const commentsList = Array.isArray(post.comments)
+                ? post.comments
+                : [];
+              const isLiked = likesList.includes(userKey);
 
-                return (
-                  <article key={post.id} className="fb-card post-card">
-                    <div className="post-header-row">
-                      <div className="post-header">
-                        <img src={post.authorAvatar} alt="author" className="fb-avatar-md" />
-                        <div>
-                          <h4 className="post-author">{post.authorName}</h4>
-                          <span className="post-time">{post.createdAt} · 🌎 Công khai</span>
-                        </div>
+              const authorEmail = (post.authorEmail || "").toLowerCase();
+              const isMyPost =
+                authorEmail &&
+                user.email &&
+                authorEmail === user.email.toLowerCase();
+
+              const authorKey = authorEmail || post.id;
+              const alreadyFriend =
+                isFriend(authorKey) || isFriend(post.authorEmail);
+
+              return (
+                <article key={post.id} className="fb-card post-card">
+                  <div className="post-header-row">
+                    <div className="post-header">
+                      <img
+                        src={post.authorAvatar || DEFAULT_AVATAR}
+                        alt="author"
+                        className="fb-avatar-md"
+                      />
+                      <div>
+                        <h4 className="post-author">{post.authorName}</h4>
+                        <span className="post-time">
+                          {post.createdAt} · 🌎 Công khai
+                        </span>
                       </div>
+                    </div>
 
-                      {!isMyPost && (
-                        <div className="post-author-actions">
-                          {isFriend ? (
-                            <button
-                              className="btn-danger-soft btn-sm"
-                              onClick={() => handleRemoveFriend(post.authorId)}
-                            >
-                              ✓ Bạn bè (Xóa)
-                            </button>
-                          ) : (
-                            <button
-                              className="fb-btn-secondary btn-sm"
-                              onClick={() => handleAddFriend(post.authorId)}
-                            >
-                              ➕ Thêm bạn
-                            </button>
-                          )}
+                    {/* Nút Kết bạn / Xóa bạn & Nhắn tin ngay trên bài viết của người khác */}
+                    {!isMyPost && (
+                      <div className="post-author-actions">
+                        {alreadyFriend ? (
                           <button
-                            className="fb-btn-primary btn-sm"
+                            className="btn-danger-soft btn-sm"
+                            onClick={() => handleRemoveFriendPerson(authorKey)}
+                          >
+                            ✓ Bạn bè (Xóa)
+                          </button>
+                        ) : (
+                          <button
+                            className="fb-btn-secondary btn-sm"
                             onClick={() =>
-                              setChatPartner({
-                                id: post.authorId,
+                              handleAddFriendPerson({
+                                id: authorKey,
+                                email: post.authorEmail,
                                 name: post.authorName,
                                 avatar: post.authorAvatar,
                               })
                             }
                           >
-                            💌 Nhắn tin
+                            ➕ Kết bạn
                           </button>
-                        </div>
-                      )}
-                    </div>
-
-                    {post.content && <p className="post-content">{post.content}</p>}
-                    {post.image && <img src={post.image} alt="post" className="post-image" />}
-
-                    <div className="post-stats">
-                      <span>💜 {likesList.length} lượt thích</span>
-                      <span>{commentsList.length} bình luận</span>
-                    </div>
-
-                    <div className="post-actions">
-                      <button
-                        className={isLiked ? "liked" : ""}
-                        onClick={() => handleToggleLike(post)}
-                      >
-                        {isLiked ? "💜 Đã thả tim" : "🤍 Thả tim"}
-                      </button>
-                      <button>💬 Bình luận</button>
-                      {!isMyPost && (
+                        )}
                         <button
+                          className="fb-btn-primary btn-sm"
                           onClick={() =>
-                            setChatPartner({
-                              id: post.authorId,
+                            handleOpenChatWith({
+                              id: authorKey,
+                              email: post.authorEmail,
                               name: post.authorName,
                               avatar: post.authorAvatar,
                             })
                           }
                         >
-                          💌 Làm quen
+                          💌 Nhắn tin
                         </button>
-                      )}
-                    </div>
-
-                    {/* KHU VỰC VIẾT BÌNH LUẬN */}
-                    <div className="post-comments">
-                      {commentsList.map((c) => (
-                        <div key={c.id} className="comment-row">
-                          <img src={c.userAvatar} alt="avatar" className="comment-avatar" />
-                          <div className="comment-item">
-                            <div className="comment-header">
-                              <strong>{c.userName}</strong>
-                              <span className="comment-time">{c.time}</span>
-                            </div>
-                            <span>{c.text}</span>
-                          </div>
-                        </div>
-                      ))}
-
-                      <div className="comment-input-row">
-                        <img src={currentUser.avatar} alt="me" className="comment-avatar" />
-                        <input
-                          type="text"
-                          placeholder={`Viết bình luận dưới tên ${currentUser.name}...`}
-                          value={commentInputs[post.id] || ""}
-                          onChange={(e) =>
-                            setCommentInputs({ ...commentInputs, [post.id]: e.target.value })
-                          }
-                          onKeyDown={(e) => e.key === "Enter" && handleAddComment(post.id)}
-                        />
-                        <button onClick={() => handleAddComment(post.id)}>Gửi</button>
                       </div>
+                    )}
+                  </div>
+
+                  {post.content && (
+                    <p className="post-content">{post.content}</p>
+                  )}
+                  {post.image && (
+                    <img src={post.image} alt="post" className="post-image" />
+                  )}
+
+                  {/* Thống kê lượt thích & bình luận */}
+                  <div className="post-stats">
+                    <span>💜 {likesList.length} lượt thích</span>
+                    <span>{commentsList.length} bình luận</span>
+                  </div>
+
+                  {/* Thanh tương tác: Thích, Bình luận, Nhắn tin */}
+                  <div className="post-actions">
+                    <button
+                      className={isLiked ? "liked" : ""}
+                      onClick={() => handleToggleLike(post)}
+                    >
+                      {isLiked ? "💜 Đã thích" : "🤍 Thích"}
+                    </button>
+                    <button
+                      onClick={() => {
+                        const inputEl = document.getElementById(
+                          `cmt-input-${post.id}`
+                        );
+                        if (inputEl) inputEl.focus();
+                      }}
+                    >
+                      💬 Bình luận
+                    </button>
+                    {!isMyPost && (
+                      <button
+                        onClick={() =>
+                          handleOpenChatWith({
+                            id: authorKey,
+                            email: post.authorEmail,
+                            name: post.authorName,
+                            avatar: post.authorAvatar,
+                          })
+                        }
+                      >
+                        💌 Nhắn tin
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Danh sách bình luận & ô nhập bình luận */}
+                  <div className="post-comments">
+                    {commentsList.map((c) => (
+                      <div key={c.id} className="comment-row">
+                        <img
+                          src={c.userAvatar || DEFAULT_AVATAR}
+                          alt="avatar"
+                          className="comment-avatar"
+                        />
+                        <div className="comment-item">
+                          <div className="comment-header">
+                            <strong>{c.userName}</strong>
+                            <span className="comment-time">{c.time}</span>
+                          </div>
+                          <span>{c.text}</span>
+                        </div>
+                      </div>
+                    ))}
+
+                    <div className="comment-input-row">
+                      <img
+                        src={user.avatar || DEFAULT_AVATAR}
+                        alt="me"
+                        className="comment-avatar"
+                      />
+                      <input
+                        id={`cmt-input-${post.id}`}
+                        type="text"
+                        placeholder={`Viết bình luận dưới tên ${user.name}...`}
+                        value={commentInputs[post.id] || ""}
+                        onChange={(e) =>
+                          setCommentInputs({
+                            ...commentInputs,
+                            [post.id]: e.target.value,
+                          })
+                        }
+                        onKeyDown={(e) =>
+                          e.key === "Enter" && handleAddComment(post.id)
+                        }
+                      />
+                      <button onClick={() => handleAddComment(post.id)}>
+                        Gửi
+                      </button>
                     </div>
-                  </article>
-                );
-              })
-            ))}
+                  </div>
+                </article>
+              );
+            })
+          )}
         </main>
 
         {/* CỘT PHẢI: GỢI Ý KẾT BẠN & DANH SÁCH BẠN BÈ */}
         <aside className="fb-sidebar-right">
           <div className="fb-card">
-            <h4 className="sidebar-title">✨ Gợi ý làm quen & Thêm bạn</h4>
-            {suggestedUsers.length === 0 ? (
-              <p className="empty-text">Chưa có gợi ý mới.</p>
+            <h4 className="sidebar-title">✨ Gợi ý kết bạn</h4>
+            {suggestedPeople.length === 0 ? (
+              <p className="empty-text">Đã kết bạn với tất cả gợi ý.</p>
             ) : (
-              suggestedUsers.map((person) => (
-                <div key={person.id} className="friend-request-item">
-                  <img src={person.avatar} alt={person.name} className="fb-avatar-md" />
+              suggestedPeople.slice(0, 4).map((person) => (
+                <div
+                  key={person.email || person.id}
+                  className="friend-request-item"
+                >
+                  <img
+                    src={person.avatar || person.image || DEFAULT_AVATAR}
+                    alt={person.name}
+                    className="fb-avatar-md"
+                  />
                   <div className="friend-info">
-                    <strong>{person.name}</strong>
+                    <strong>
+                      {person.name}
+                      {person.age ? `, ${person.age}` : ""}
+                    </strong>
                     <span>{person.location || "Việt Nam"}</span>
                     <div className="friend-btns">
                       <button
                         className="fb-btn-primary btn-sm"
-                        onClick={() => handleAddFriend(person.id)}
+                        onClick={() => handleAddFriendPerson(person)}
                       >
-                        ➕ Thêm bạn
+                        ➕ Kết bạn
                       </button>
                       <button
                         className="fb-btn-secondary btn-sm"
-                        onClick={() => setChatPartner(person)}
+                        onClick={() => handleOpenChatWith(person)}
                       >
                         💌 Nhắn tin
                       </button>
@@ -698,28 +653,42 @@ export default function Home({ currentUser, onLogout, onUpdateProfile, compressI
           </div>
 
           <div className="fb-card">
-            <h4 className="sidebar-title">💜 Bạn bè ({myFriends.length})</h4>
-            {myFriends.length === 0 ? (
-              <p className="empty-text">Chưa có bạn bè.</p>
+            <h4 className="sidebar-title">💜 Bạn bè ({friends.length})</h4>
+            {friends.length === 0 ? (
+              <p className="empty-text">
+                Chưa có bạn bè. Hãy bấm Kết bạn để bắt đầu nhé!
+              </p>
             ) : (
-              myFriends.map((friend) => (
-                <div key={friend.id} className="friend-mini-row">
-                  <div className="friend-mini-left" onClick={() => setChatPartner(friend)}>
-                    <img src={friend.avatar} alt={friend.name} className="fb-avatar-sm" />
+              friends.slice(0, 8).map((friend) => (
+                <div
+                  key={friend.email || friend.id}
+                  className="friend-mini-row"
+                >
+                  <div
+                    className="friend-mini-left"
+                    onClick={() => handleOpenChatWith(friend)}
+                  >
+                    <img
+                      src={friend.avatar || friend.image || DEFAULT_AVATAR}
+                      alt={friend.name}
+                      className="fb-avatar-sm"
+                    />
                     <span>{friend.name}</span>
                   </div>
                   <div className="friend-mini-btns">
                     <button
                       className="icon-btn-chat"
-                      title="Nhắn tin làm quen"
-                      onClick={() => setChatPartner(friend)}
+                      title="Nhắn tin"
+                      onClick={() => handleOpenChatWith(friend)}
                     >
                       💬
                     </button>
                     <button
                       className="icon-btn-remove"
                       title="Xóa bạn bè"
-                      onClick={() => handleRemoveFriend(friend.id)}
+                      onClick={() =>
+                        handleRemoveFriendPerson(friend.email || friend.id)
+                      }
                     >
                       ✕
                     </button>
@@ -730,56 +699,6 @@ export default function Home({ currentUser, onLogout, onUpdateProfile, compressI
           </div>
         </aside>
       </div>
-
-      {/* HỘP THOẠI NHẮN TIN LÀM QUEN REAL-TIME */}
-      {chatPartner && (
-        <div className="chat-popup-box">
-          <div className="chat-popup-header">
-            <div className="chat-partner-info">
-              <img src={chatPartner.avatar} alt={chatPartner.name} className="fb-avatar-sm" />
-              <div>
-                <strong>{chatPartner.name}</strong>
-                <span>● Trực tuyến</span>
-              </div>
-            </div>
-            <button className="chat-close-btn" onClick={() => setChatPartner(null)}>
-              ✕
-            </button>
-          </div>
-
-          <div className="chat-popup-messages">
-            {chatMessages.length === 0 ? (
-              <div className="chat-empty-hint">
-                Gửi lời chào làm quen tới <strong>{chatPartner.name}</strong> 💜
-              </div>
-            ) : (
-              chatMessages.map((m) => (
-                <div
-                  key={m.id}
-                  className={`chat-bubble-row ${
-                    m.senderId === currentUser.id ? "mine" : "theirs"
-                  }`}
-                >
-                  <div className="chat-bubble">
-                    <p>{m.text}</p>
-                    <span>{m.time}</span>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-
-          <form onSubmit={handleSendMessage} className="chat-popup-input">
-            <input
-              type="text"
-              placeholder="Nhập tin nhắn làm quen..."
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-            />
-            <button type="submit">Gửi</button>
-          </form>
-        </div>
-      )}
     </div>
   );
 }

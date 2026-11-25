@@ -1,19 +1,26 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useApp, DEFAULT_AVATAR } from "./AppContext";
+import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { db } from "./firebase";
+
+const emailToDocId = (email) =>
+  email.trim().toLowerCase().replace(/[^a-z0-9]/g, "_");
 
 function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const { loginUser } = useApp();
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
     setError("");
 
-    if (!email.trim() || !password) {
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !password) {
       setError("Vui lòng nhập đầy đủ Email và Mật khẩu!");
       return;
     }
@@ -23,159 +30,79 @@ function Login() {
       return;
     }
 
-    const existing = JSON.parse(localStorage.getItem("currentUser"));
+    setLoading(true);
+    try {
+      const userRef = doc(db, "users", emailToDocId(cleanEmail));
+      const snap = await getDoc(userRef);
 
-    // Nếu email khớp với user đã lưu thì giữ nguyên hồ sơ cũ, ngược lại tạo hồ sơ mới theo email
-    const userData =
-      existing && existing.email?.toLowerCase() === email.trim().toLowerCase()
-        ? existing
-        : {
-            name: email.trim().split("@")[0],
-            age: 21,
-            location: "Nghệ An",
-            email: email.trim(),
-            hobbies: ["🎵 Nghe nhạc", "🎬 Xem phim", "📚 Đọc sách"],
-            description: "Rất vui được làm quen với mọi người!",
-            avatar: DEFAULT_AVATAR,
-          };
+      let userData;
+      if (snap.exists()) {
+        userData = snap.data();
+      } else {
+        userData = {
+          id: emailToDocId(cleanEmail),
+          name: cleanEmail.split("@")[0],
+          age: 21,
+          location: "Đà Nẵng",
+          email: cleanEmail,
+          hobbies: ["🎵 Nghe nhạc", "🎬 Xem phim", "☕ Cà phê"],
+          description: "Rất vui được làm quen với mọi người 💜",
+          avatar: DEFAULT_AVATAR,
+          createdAt: serverTimestamp(),
+        };
+        await setDoc(userRef, userData);
+      }
 
-    loginUser(userData);
-    navigate("/home");
+      loginUser(userData);
+      navigate("/home");
+    } catch (err) {
+      console.error("Lỗi đăng nhập:", err);
+      setError("Lỗi kết nối Firebase. Vui lòng thử lại!");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div style={styles.page}>
-      <div style={styles.card}>
-        <h1 style={styles.logo}>💕 LoveMatch</h1>
-        <p style={styles.title}>Chào mừng bạn quay trở lại!</p>
+    <div className="auth-wrapper">
+      <div className="auth-card">
+        <div className="auth-logo">💜 LoveMatch</div>
+        <p className="auth-subtitle">Đăng nhập để xem bảng tin, kết bạn & nhắn tin</p>
 
-        {error && <div style={styles.errorBox}>{error}</div>}
+        {error && <div className="auth-error">{error}</div>}
 
-        <form onSubmit={handleLogin}>
-          <div style={styles.group}>
-            <label style={styles.label}>Email</label>
-            <input
-              type="email"
-              placeholder="Nhập email của bạn"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              style={styles.input}
-            />
-          </div>
+        <form onSubmit={handleLogin} className="auth-form">
+          <input
+            type="email"
+            placeholder="Nhập email của bạn"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+          <input
+            type="password"
+            placeholder="Nhập mật khẩu (từ 6 ký tự)"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
 
-          <div style={styles.group}>
-            <label style={styles.label}>Mật khẩu</label>
-            <input
-              type="password"
-              placeholder="Nhập mật khẩu"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              style={styles.input}
-            />
-          </div>
-
-          <p
-            style={styles.forgot}
-            onClick={() =>
-              alert("Liên kết đặt lại mật khẩu đã được gửi tới email của bạn!")
-            }
+          <button
+            type="submit"
+            className="fb-btn-primary auth-submit-btn"
+            disabled={loading}
           >
-            Quên mật khẩu?
-          </p>
-
-          <button type="submit" style={styles.button}>
-            Đăng nhập ❤️
+            {loading ? "Đang đăng nhập..." : "Đăng nhập 💜"}
           </button>
         </form>
 
-        <p style={styles.register}>
-          Chưa có tài khoản?
-          <Link to="/register" style={styles.registerLink}>
-            {" "}
+        <div className="auth-switch">
+          Chưa có tài khoản?{" "}
+          <Link to="/register" style={{ color: "#7b3fe4", fontWeight: "700" }}>
             Đăng ký ngay
           </Link>
-        </p>
+        </div>
       </div>
     </div>
   );
 }
-
-const styles = {
-  page: {
-    minHeight: "100vh",
-    background:
-      "linear-gradient(135deg, #ffe6f0 0%, #fff0f5 50%, #fce4ec 100%)",
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    fontFamily:
-      "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-    padding: "20px",
-  },
-  card: {
-    width: "100%",
-    maxWidth: "390px",
-    backgroundColor: "white",
-    padding: "40px 34px",
-    borderRadius: "25px",
-    boxShadow: "0 12px 35px rgba(255, 77, 109, 0.14)",
-    border: "1px solid #ffe1e9",
-    textAlign: "center",
-  },
-  logo: { color: "#ff4d6d", fontSize: "36px", margin: "0 0 8px 0" },
-  title: { color: "#718096", fontSize: "15px", marginBottom: "24px" },
-  errorBox: {
-    backgroundColor: "#fff5f5",
-    color: "#e53e3e",
-    border: "1px solid #fed7d7",
-    padding: "10px 12px",
-    borderRadius: "12px",
-    fontSize: "13px",
-    marginBottom: "16px",
-  },
-  group: { textAlign: "left", marginBottom: "18px" },
-  label: {
-    display: "block",
-    marginBottom: "6px",
-    color: "#2d3748",
-    fontWeight: "bold",
-    fontSize: "14px",
-  },
-  input: {
-    width: "100%",
-    boxSizing: "border-box",
-    padding: "12px 14px",
-    border: "1px solid #e2e8f0",
-    borderRadius: "12px",
-    fontSize: "14px",
-    outline: "none",
-  },
-  forgot: {
-    textAlign: "right",
-    color: "#ff4d6d",
-    fontSize: "13px",
-    fontWeight: "600",
-    cursor: "pointer",
-    marginBottom: "22px",
-  },
-  button: {
-    width: "100%",
-    padding: "14px",
-    border: "none",
-    borderRadius: "14px",
-    background: "linear-gradient(135deg, #ff4d6d, #ff758c)",
-    color: "white",
-    fontSize: "16px",
-    fontWeight: "bold",
-    cursor: "pointer",
-    boxShadow: "0 6px 18px rgba(255, 77, 109, 0.25)",
-  },
-  register: { marginTop: "24px", color: "#718096", fontSize: "14px" },
-  registerLink: {
-    color: "#ff4d6d",
-    fontWeight: "bold",
-    textDecoration: "none",
-  },
-};
 
 export default Login;

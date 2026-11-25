@@ -76,6 +76,7 @@ function ChatBox() {
     } else if (chatContacts.length > 0 && !partner) {
       setPartner(chatContacts[0]);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, chatContacts]);
 
   const handleSelectPartner = (item) => {
