@@ -23,7 +23,7 @@ const DATE_IDEAS = [
   "🌊 Đi dạo & hóng gió",
 ];
 
-// Tạo ID phòng chat duy nhất và cố định cho 2 người dựa trên email
+// Tạo ID phòng chat cố định cho 2 người dựa trên email
 const getChatRoomId = (email1, email2) => {
   if (!email1 || !email2) return "default_room";
   return [email1.trim().toLowerCase(), email2.trim().toLowerCase()]
@@ -36,24 +36,12 @@ function ChatBox() {
   const { userId } = useParams();
   const { currentUser, matches, friends, updateMatchLastMessage } = useApp();
 
-  // Gộp danh sách bạn bè và người đã tương hợp (loại bỏ trùng lặp) để hiển thị trong hộp thư
-  const chatContacts = React.useMemo(() => {
-    const map = new Map();
-    [...friends, ...matches].forEach((person) => {
-      const key = person.email || String(person.id);
-      if (!map.has(key)) {
-        map.set(key, person);
-      }
-    });
-    return Array.from(map.values());
-  }, [friends, matches]);
-
+  const [firebaseUsers, setFirebaseUsers] = useState([]);
   const [partner, setPartner] = useState(null);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loadingMessages, setLoadingMessages] = useState(false);
 
-  // State cho Modal Lên lịch hẹn hò
   const [showDateModal, setShowDateModal] = useState(false);
   const [dateForm, setDateForm] = useState({
     activity: DATE_IDEAS[0],
@@ -63,16 +51,52 @@ function ChatBox() {
   });
 
   const messagesEndRef = useRef(null);
+  const myEmail = (currentUser?.email || "").trim().toLowerCase();
 
-  // 1. Xác định đối phương đang trò chuyện từ URL hoặc người đầu tiên trong danh sách
+  // 1. Lắng nghe danh sách thành viên thật trên Firebase
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, "users"), (snapshot) => {
+      const list = snapshot.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .filter((u) => u.email && u.email.toLowerCase() !== myEmail);
+      setFirebaseUsers(list);
+    });
+    return () => unsub();
+  }, [myEmail]);
+
+  // 2. Gộp danh sách liên hệ (Firebase + Bạn bè + Tương hợp)
+  const chatContacts = React.useMemo(() => {
+    const map = new Map();
+    [...firebaseUsers, ...friends, ...matches].forEach((person) => {
+      const key = (person.email || String(person.id)).toLowerCase();
+      if (key && key !== myEmail && !map.has(key)) {
+        map.set(key, person);
+      }
+    });
+    return Array.from(map.values());
+  }, [firebaseUsers, friends, matches, myEmail]);
+
+  // 3. Tự động chọn đối phương từ URL (/chat/:userId)
   useEffect(() => {
     if (userId) {
+      const decodedId = decodeURIComponent(userId).trim().toLowerCase();
       const found = chatContacts.find(
         (u) =>
-          u.email?.toLowerCase() === userId.toLowerCase() ||
-          String(u.id) === String(userId)
+          (u.email || "").toLowerCase() === decodedId ||
+          String(u.id).toLowerCase() === decodedId
       );
-      setPartner(found || null);
+      if (found) {
+        setPartner(found);
+      } else if (decodedId.includes("@")) {
+        setPartner({
+          id: decodedId,
+          email: decodedId,
+          name: decodedId.split("@")[0],
+          avatar: DEFAULT_AVATAR,
+          location: "Việt Nam",
+          isOnline: true,
+        });
+      }
     } else if (chatContacts.length > 0 && !partner) {
       setPartner(chatContacts[0]);
     }
@@ -82,18 +106,18 @@ function ChatBox() {
   const handleSelectPartner = (item) => {
     const targetKey = item.email || item.id;
     setPartner(item);
-    navigate(`/chat/${targetKey}`);
+    navigate(`/chat/${encodeURIComponent(targetKey)}`);
   };
 
-  // 2. Lắng nghe tin nhắn mới theo thời gian thực từ Firebase Firestore
+  // 4. Lắng nghe tin nhắn theo thời gian thực
   useEffect(() => {
-    if (!partner?.email || !currentUser?.email) {
+    if (!partner?.email || !myEmail) {
       setMessages([]);
       return;
     }
 
     setLoadingMessages(true);
-    const roomId = getChatRoomId(currentUser.email, partner.email);
+    const roomId = getChatRoomId(myEmail, partner.email);
     const q = query(
       collection(db, "chats", roomId, "messages"),
       orderBy("createdAt", "asc")
@@ -110,15 +134,14 @@ function ChatBox() {
         setLoadingMessages(false);
       },
       (error) => {
-        console.error("Lỗi khi tải tin nhắn real-time:", error);
+        console.error("Lỗi tải tin nhắn:", error);
         setLoadingMessages(false);
       }
     );
 
     return () => unsubscribe();
-  }, [partner, currentUser]);
+  }, [partner, myEmail]);
 
-  // Tự động cuộn xuống tin nhắn mới nhất
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -131,13 +154,13 @@ function ChatBox() {
       .padStart(2, "0")}`;
   };
 
-  // 3. Hàm gửi tin nhắn thật lên Firestore
+  // Gửi tin nhắn lên Firestore
   const handleSend = async (textToSend = null, dateCardData = null) => {
-    if (!partner?.email || !currentUser?.email) return;
+    if (!partner?.email || !myEmail) return;
     const text = textToSend !== null ? textToSend : input;
     if (!text.trim() && !dateCardData) return;
 
-    const roomId = getChatRoomId(currentUser.email, partner.email);
+    const roomId = getChatRoomId(myEmail, partner.email);
     const nowTime = getCurrentTime();
     const cleanText = text.trim();
 
@@ -147,7 +170,7 @@ function ChatBox() {
 
     try {
       await addDoc(collection(db, "chats", roomId, "messages"), {
-        senderEmail: currentUser.email.toLowerCase(),
+        senderEmail: myEmail,
         senderName: currentUser.name,
         text: cleanText,
         dateInvite: dateCardData || null,
@@ -164,18 +187,17 @@ function ChatBox() {
       );
     } catch (error) {
       console.error("Không thể gửi tin nhắn:", error);
-      alert("Gửi tin nhắn thất bại. Vui lòng kiểm tra kết nối Firebase!");
+      alert("Gửi tin nhắn thất bại. Vui lòng kiểm tra kết nối mạng!");
     }
   };
 
-  // Gửi thẻ lời mời hẹn hò
   const handleSendDateInvite = async (e) => {
     e.preventDefault();
     if (!dateForm.date || !dateForm.place.trim()) {
       alert("Vui lòng chọn ngày và nhập địa điểm hẹn hò!");
       return;
     }
-    await handleSend("Mình mời bạn đi hẹn hò nhé! 💕", { ...dateForm });
+    await handleSend("Mình mời bạn đi hẹn hò nhé! 💜", { ...dateForm });
     setShowDateModal(false);
     setDateForm({
       activity: DATE_IDEAS[0],
@@ -185,60 +207,54 @@ function ChatBox() {
     });
   };
 
-  // Thả tim / Bỏ tim tin nhắn trên Firestore
   const toggleLike = async (msg) => {
-    if (!partner?.email || !currentUser?.email) return;
-    const roomId = getChatRoomId(currentUser.email, partner.email);
+    if (!partner?.email || !myEmail) return;
+    const roomId = getChatRoomId(myEmail, partner.email);
     try {
-      const msgRef = doc(db, "chats", roomId, "messages", msg.id);
-      await updateDoc(msgRef, {
+      await updateDoc(doc(db, "chats", roomId, "messages", msg.id), {
         liked: !msg.liked,
       });
     } catch (error) {
-      console.error("Lỗi khi thả tim tin nhắn:", error);
+      console.error("Lỗi thả tim:", error);
     }
   };
 
-  // Xóa toàn bộ tin nhắn trong phòng chat trên Firestore
   const handleClearChat = async () => {
-    if (!partner?.email || !currentUser?.email) return;
-    if (
-      !window.confirm(
-        `Xóa toàn bộ cuộc trò chuyện với ${partner.name} cho cả hai phía?`
-      )
-    ) {
+    if (!partner?.email || !myEmail) return;
+    if (!window.confirm(`Xóa toàn bộ cuộc trò chuyện với ${partner.name}?`)) {
       return;
     }
 
-    const roomId = getChatRoomId(currentUser.email, partner.email);
+    const roomId = getChatRoomId(myEmail, partner.email);
     try {
       const snapshot = await getDocs(
         collection(db, "chats", roomId, "messages")
       );
-      const deletePromises = snapshot.docs.map((docSnap) =>
-        deleteDoc(doc(db, "chats", roomId, "messages", docSnap.id))
+      await Promise.all(
+        snapshot.docs.map((docSnap) =>
+          deleteDoc(doc(db, "chats", roomId, "messages", docSnap.id))
+        )
       );
-      await Promise.all(deletePromises);
     } catch (error) {
-      console.error("Lỗi khi xóa lịch sử chat:", error);
+      console.error("Lỗi xóa lịch sử chat:", error);
     }
   };
 
   const quickReplies = [
-    "Hôm nay bạn thế nào? 🌸",
+    "Hôm nay bạn thế nào? 💜",
     "Rảnh rỗi đi cafe không? ☕",
-    "Cuối tuần mình đi ăn nhé! 🍗",
+    "Cuối tuần mình đi ăn nhé! 🍜",
   ];
 
   return (
     <div style={styles.page}>
-      {/* HEADER */}
+      {/* HEADER TÍM PASTEL */}
       <header style={styles.header}>
         <div style={styles.headerLeftGroup}>
           <button
             style={styles.headerBtn}
             onClick={() => navigate("/home")}
-            title="Trang chủ"
+            title="Bảng tin"
           >
             ←
           </button>
@@ -255,7 +271,7 @@ function ChatBox() {
 
       {/* BỐ CỤC 3 CỘT */}
       <div style={styles.layoutContainer}>
-        {/* CỘT 1: MENU SIDEBAR TRÁI */}
+        {/* CỘT 1: MENU TRÁI */}
         <aside style={styles.leftSidebar}>
           <div
             style={styles.userProfileCard}
@@ -275,7 +291,7 @@ function ChatBox() {
           <div style={styles.menuList}>
             <button style={styles.navBtn} onClick={() => navigate("/home")}>
               <span style={styles.navIcon}>🏠</span>
-              <span style={styles.navLabel}>Khám phá</span>
+              <span style={styles.navLabel}>Bảng tin</span>
             </button>
             <button
               style={styles.navBtn}
@@ -298,7 +314,7 @@ function ChatBox() {
           </div>
         </aside>
 
-        {/* CỘT 2: DANH SÁCH HỘP THƯ */}
+        {/* CỘT 2: HỘP THƯ */}
         <div style={styles.inboxSidebar}>
           <div style={styles.inboxHeader}>
             <h3 style={styles.inboxTitle}>Hộp thư ({chatContacts.length})</h3>
@@ -310,12 +326,12 @@ function ChatBox() {
                 style={{
                   padding: "24px",
                   textAlign: "center",
-                  color: "#718096",
+                  color: "#7c6b99",
                   fontSize: "14px",
                 }}
               >
-                Chưa có bạn bè nào. Hãy vào mục Bạn bè hoặc Khám phá để kết nối
-                nhé!
+                Chưa có người trò chuyện. Hãy vào Bảng tin hoặc Bạn bè để kết
+                nối nhé! 💜
               </div>
             ) : (
               chatContacts.map((item) => {
@@ -329,9 +345,9 @@ function ChatBox() {
                     key={item.email || item.id}
                     style={{
                       ...styles.inboxItem,
-                      backgroundColor: isActive ? "#ffe6f0" : "transparent",
+                      backgroundColor: isActive ? "#f2ebff" : "transparent",
                       borderLeft: isActive
-                        ? "4px solid #ff4d6d"
+                        ? "4px solid #9d65ff"
                         : "4px solid transparent",
                     }}
                     onClick={() => handleSelectPartner(item)}
@@ -342,17 +358,16 @@ function ChatBox() {
                         alt={item.name}
                         style={styles.inboxAvatar}
                       />
-                      {item.isOnline && <span style={styles.onlineDot} />}
+                      <span style={styles.onlineDot} />
                     </div>
 
                     <div style={styles.inboxInfo}>
                       <div style={styles.inboxNameRow}>
                         <span style={styles.inboxName}>
-                          {item.name}, {item.age}
+                          {item.name}
+                          {item.age ? `, ${item.age}` : ""}
                         </span>
-                        <span style={styles.inboxTime}>
-                          {item.time || "Trực tuyến"}
-                        </span>
+                        <span style={styles.inboxTime}>Trực tuyến</span>
                       </div>
                       <span style={styles.inboxLastMsg}>
                         {item.message || item.email}
@@ -377,21 +392,20 @@ function ChatBox() {
                       alt={partner.name}
                       style={styles.avatarImg}
                     />
-                    {partner.isOnline && <span style={styles.onlineDot} />}
+                    <span style={styles.onlineDot} />
                   </div>
 
                   <div style={styles.headerInfo}>
                     <div style={styles.nameRow}>
                       <span style={styles.partnerName}>
-                        {partner.name}, {partner.age}
+                        {partner.name}
+                        {partner.age ? `, ${partner.age}` : ""}
                       </span>
                       <span style={styles.distBadge}>
                         📍 {partner.location || "Việt Nam"}
                       </span>
                     </div>
-                    <span style={styles.statusText}>
-                      {partner.status || "Đang hoạt động"}
-                    </span>
+                    <span style={styles.statusText}>● Đang hoạt động</span>
                   </div>
                 </div>
 
@@ -407,7 +421,7 @@ function ChatBox() {
                     onClick={handleClearChat}
                     title="Xóa cuộc trò chuyện"
                   >
-                    🗑️ Xóa chat
+                    🗑️ Xóa trò chuyện
                   </button>
                 </div>
               </div>
@@ -425,20 +439,19 @@ function ChatBox() {
                         fontWeight: "bold",
                         fontSize: "16px",
                         margin: "6px 0",
+                        color: "#2d1f47",
                       }}
                     >
                       Bắt đầu trò chuyện với {partner.name}
                     </p>
                     <span>
                       Tin nhắn sẽ hiển thị ngay lập tức khi {partner.name} mở
-                      ứng dụng! ❤️
+                      ứng dụng! 💜
                     </span>
                   </div>
                 ) : (
                   messages.map((msg) => {
-                    const isUser =
-                      msg.senderEmail?.toLowerCase() ===
-                      currentUser.email?.toLowerCase();
+                    const isUser = msg.senderEmail?.toLowerCase() === myEmail;
 
                     return (
                       <div
@@ -460,8 +473,11 @@ function ChatBox() {
                           <div
                             style={{
                               ...styles.bubble,
-                              backgroundColor: isUser ? "#ff4d6d" : "#ffffff",
-                              color: isUser ? "#ffffff" : "#2d3748",
+                              background: isUser
+                                ? "linear-gradient(135deg, #a770ef 0%, #cf8bf3 100%)"
+                                : "#ffffff",
+                              color: isUser ? "#ffffff" : "#2d1f47",
+                              border: isUser ? "none" : "1px solid #e6d9ff",
                               borderRadius: isUser
                                 ? "20px 20px 4px 20px"
                                 : "20px 20px 20px 4px",
@@ -473,12 +489,12 @@ function ChatBox() {
                                 style={{
                                   ...styles.dateInviteCard,
                                   backgroundColor: isUser
-                                    ? "rgba(255,255,255,0.2)"
-                                    : "#fff0f5",
+                                    ? "rgba(255,255,255,0.22)"
+                                    : "#faf7ff",
                                   borderColor: isUser
-                                    ? "rgba(255,255,255,0.6)"
-                                    : "#ff4d6d",
-                                  color: isUser ? "#ffffff" : "#2d3748",
+                                    ? "rgba(255,255,255,0.7)"
+                                    : "#9d65ff",
+                                  color: isUser ? "#ffffff" : "#2d1f47",
                                 }}
                               >
                                 <div
@@ -504,7 +520,7 @@ function ChatBox() {
                             style={styles.likeBtn}
                             title="Thả tim"
                           >
-                            {msg.liked ? "❤️" : "🤍"}
+                            {msg.liked ? "💜" : "🤍"}
                           </button>
                         </div>
 
@@ -550,7 +566,7 @@ function ChatBox() {
               <h3 style={styles.placeholderTitle}>Tin nhắn của bạn</h3>
               <p style={styles.placeholderText}>
                 Hãy chọn một người bạn từ danh sách bên trái để bắt đầu trò
-                chuyện trực tiếp nhé! 💕
+                chuyện trực tiếp nhé! 💜
               </p>
             </div>
           )}
@@ -561,14 +577,14 @@ function ChatBox() {
       {showDateModal && (
         <div style={styles.modalBackdrop}>
           <div style={styles.modalCard}>
-            <h3 style={{ margin: "0 0 8px", color: "#ff4d6d" }}>
+            <h3 style={{ margin: "0 0 8px", color: "#7b3fe4" }}>
               📅 Lên lịch hẹn với {partner?.name}
             </h3>
             <p
               style={{
                 margin: "0 0 16px",
                 fontSize: "13px",
-                color: "#718096",
+                color: "#7c6b99",
               }}
             >
               Chọn thời gian và địa điểm lý tưởng cho buổi gặp mặt
@@ -639,7 +655,7 @@ function ChatBox() {
                   Hủy
                 </button>
                 <button type="submit" style={styles.modalSubmitBtn}>
-                  Gửi lời mời 💕
+                  Gửi lời mời 💜
                 </button>
               </div>
             </form>
@@ -653,20 +669,20 @@ function ChatBox() {
 const styles = {
   page: {
     minHeight: "100vh",
-    background:
-      "linear-gradient(135deg, #ffe6f0 0%, #fff0f5 50%, #fce4ec 100%)",
+    background: "linear-gradient(135deg, #f3ebff 0%, #fcf8ff 100%)",
     fontFamily:
-      "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+      "Quicksand, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
   },
   header: {
     height: "65px",
-    background: "linear-gradient(135deg, #ff4d6d, #ff758c)",
+    background:
+      "linear-gradient(135deg, #a770ef 0%, #cf8bf3 55%, #e5b2ff 100%)",
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
     padding: "0 32px",
     color: "white",
-    boxShadow: "0 4px 15px rgba(255, 77, 109, 0.2)",
+    boxShadow: "0 4px 16px rgba(157, 101, 255, 0.22)",
     position: "sticky",
     top: 0,
     zIndex: 100,
@@ -687,7 +703,7 @@ const styles = {
   leftSidebar: {
     width: "250px",
     backgroundColor: "#ffffff",
-    borderRight: "1px solid #ffe1e9",
+    borderRight: "1px solid #e6d9ff",
     position: "sticky",
     top: "65px",
     height: "calc(100vh - 65px)",
@@ -700,8 +716,8 @@ const styles = {
     gap: "12px",
     padding: "10px 12px",
     borderRadius: "16px",
-    backgroundColor: "#fff0f5",
-    border: "1px solid #ffe1e9",
+    backgroundColor: "#faf7ff",
+    border: "1px solid #e6d9ff",
     marginBottom: "18px",
     cursor: "pointer",
   },
@@ -710,17 +726,17 @@ const styles = {
     height: "46px",
     borderRadius: "50%",
     objectFit: "cover",
-    border: "2px solid #ff4d6d",
+    border: "2px solid #9d65ff",
   },
   sidebarUserInfo: {
     display: "flex",
     flexDirection: "column",
     overflow: "hidden",
   },
-  sidebarUserName: { fontSize: "15px", fontWeight: "bold", color: "#2d3748" },
+  sidebarUserName: { fontSize: "15px", fontWeight: "bold", color: "#2d1f47" },
   sidebarUserSub: {
     fontSize: "11px",
-    color: "#ff4d6d",
+    color: "#7b3fe4",
     marginTop: "2px",
     whiteSpace: "nowrap",
     overflow: "hidden",
@@ -736,15 +752,15 @@ const styles = {
     display: "flex",
     alignItems: "center",
     gap: "14px",
-    color: "#718096",
+    color: "#7c6b99",
     fontSize: "15px",
     fontWeight: "600",
     textAlign: "left",
     width: "100%",
   },
   navBtnActive: {
-    backgroundColor: "#ffe6f0",
-    color: "#ff4d6d",
+    backgroundColor: "#f2ebff",
+    color: "#7b3fe4",
     fontWeight: "bold",
   },
   navIcon: { fontSize: "20px" },
@@ -752,19 +768,19 @@ const styles = {
   inboxSidebar: {
     width: "300px",
     backgroundColor: "#ffffff",
-    borderRight: "1px solid #ffe1e9",
+    borderRight: "1px solid #e6d9ff",
     display: "flex",
     flexDirection: "column",
     height: "calc(100vh - 65px)",
     position: "sticky",
     top: "65px",
   },
-  inboxHeader: { padding: "16px 20px", borderBottom: "1px solid #ffe1e9" },
+  inboxHeader: { padding: "16px 20px", borderBottom: "1px solid #e6d9ff" },
   inboxTitle: {
     margin: 0,
     fontSize: "17px",
     fontWeight: "bold",
-    color: "#2d3748",
+    color: "#2d1f47",
   },
   inboxList: { flex: 1, overflowY: "auto" },
   inboxItem: {
@@ -772,7 +788,7 @@ const styles = {
     alignItems: "center",
     gap: "12px",
     padding: "14px 18px",
-    borderBottom: "1px solid #fff0f5",
+    borderBottom: "1px solid #f5f0ff",
     cursor: "pointer",
   },
   avatarWrapper: { position: "relative" },
@@ -781,7 +797,7 @@ const styles = {
     height: "48px",
     borderRadius: "50%",
     objectFit: "cover",
-    border: "1.5px solid #ffe1e9",
+    border: "1.5px solid #e6d9ff",
   },
   onlineDot: {
     position: "absolute",
@@ -804,11 +820,11 @@ const styles = {
     justifyContent: "space-between",
     marginBottom: "4px",
   },
-  inboxName: { fontSize: "14px", fontWeight: "bold", color: "#2d3748" },
-  inboxTime: { fontSize: "11px", color: "#a0aec0" },
+  inboxName: { fontSize: "14px", fontWeight: "bold", color: "#2d1f47" },
+  inboxTime: { fontSize: "11px", color: "#7b3fe4" },
   inboxLastMsg: {
     fontSize: "13px",
-    color: "#718096",
+    color: "#7c6b99",
     whiteSpace: "nowrap",
     overflow: "hidden",
     textOverflow: "ellipsis",
@@ -824,15 +840,16 @@ const styles = {
     borderRadius: "24px",
     height: "calc(100vh - 105px)",
     minHeight: "560px",
-    boxShadow: "0 8px 30px rgba(255, 77, 109, 0.12)",
+    boxShadow: "0 8px 30px rgba(157, 101, 255, 0.14)",
     display: "flex",
     flexDirection: "column",
     overflow: "hidden",
-    border: "1px solid #ffe1e9",
+    border: "1px solid #e6d9ff",
   },
   chatHeader: {
     padding: "14px 20px",
-    background: "linear-gradient(135deg, #ff4d6d, #ff758c)",
+    background:
+      "linear-gradient(135deg, #a770ef 0%, #cf8bf3 60%, #e0b0ff 100%)",
     color: "#ffffff",
     display: "flex",
     alignItems: "center",
@@ -852,14 +869,14 @@ const styles = {
   distBadge: {
     fontSize: "11px",
     backgroundColor: "rgba(255, 255, 255, 0.25)",
-    padding: "2px 7px",
+    padding: "2px 8px",
     borderRadius: "10px",
   },
-  statusText: { fontSize: "12px", marginTop: "2px", opacity: 0.9 },
+  statusText: { fontSize: "12px", marginTop: "2px", opacity: 0.95 },
   datePlanBtn: {
     border: "none",
     background: "#ffffff",
-    color: "#ff4d6d",
+    color: "#7b3fe4",
     padding: "7px 14px",
     borderRadius: "14px",
     cursor: "pointer",
@@ -880,7 +897,7 @@ const styles = {
     flex: 1,
     overflowY: "auto",
     padding: "20px",
-    backgroundColor: "#fff9fa",
+    backgroundColor: "#faf7ff",
     display: "flex",
     flexDirection: "column",
     gap: "14px",
@@ -894,7 +911,7 @@ const styles = {
     padding: "11px 16px",
     fontSize: "14px",
     lineHeight: "1.5",
-    boxShadow: "0 3px 12px rgba(0,0,0,0.04)",
+    boxShadow: "0 3px 12px rgba(157, 101, 255, 0.08)",
     wordBreak: "break-word",
   },
   dateInviteCard: {
@@ -911,14 +928,14 @@ const styles = {
     cursor: "pointer",
     fontSize: "13px",
   },
-  timeText: { fontSize: "11px", color: "#a0aec0", marginTop: "4px" },
+  timeText: { fontSize: "11px", color: "#7c6b99", marginTop: "4px" },
   emptyState: {
     flex: 1,
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
-    color: "#718096",
+    color: "#7c6b99",
     textAlign: "center",
   },
   emptyIcon: { fontSize: "44px" },
@@ -928,13 +945,13 @@ const styles = {
     padding: "10px 16px",
     backgroundColor: "#ffffff",
     overflowX: "auto",
-    borderTop: "1px solid #ffe1e9",
+    borderTop: "1px solid #e6d9ff",
   },
   quickChip: {
-    border: "1px solid #ffccd5",
-    backgroundColor: "#fff0f5",
-    color: "#ff4d6d",
-    padding: "6px 12px",
+    border: "1px solid #d4baff",
+    backgroundColor: "#f2ebff",
+    color: "#7b3fe4",
+    padding: "6px 14px",
     borderRadius: "16px",
     fontSize: "12px",
     fontWeight: "600",
@@ -947,26 +964,28 @@ const styles = {
     gap: "10px",
     padding: "14px 16px",
     backgroundColor: "#ffffff",
-    borderTop: "1px solid #ffe1e9",
+    borderTop: "1px solid #e6d9ff",
   },
   inputField: {
     flex: 1,
     padding: "12px 16px",
-    border: "1px solid #ffccd5",
+    border: "1px solid #d4baff",
     borderRadius: "22px",
     outline: "none",
     fontSize: "14px",
-    backgroundColor: "#fff9fa",
+    backgroundColor: "#faf7ff",
+    color: "#2d1f47",
   },
   sendBtn: {
     border: "none",
-    backgroundColor: "#ff4d6d",
+    background: "linear-gradient(135deg, #a770ef 0%, #cf8bf3 100%)",
     color: "#ffffff",
-    padding: "11px 20px",
+    padding: "11px 22px",
     borderRadius: "22px",
     cursor: "pointer",
     fontWeight: "bold",
-    fontSize: "13px",
+    fontSize: "13.5px",
+    boxShadow: "0 4px 12px rgba(157, 101, 255, 0.28)",
   },
   noPartnerSelected: {
     backgroundColor: "#ffffff",
@@ -976,7 +995,7 @@ const styles = {
     flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
-    border: "1px solid #ffe1e9",
+    border: "1px solid #e6d9ff",
     padding: "40px",
     textAlign: "center",
   },
@@ -984,12 +1003,12 @@ const styles = {
   placeholderTitle: {
     fontSize: "22px",
     fontWeight: "bold",
-    color: "#2d3748",
+    color: "#2d1f47",
     margin: "0 0 10px 0",
   },
   placeholderText: {
     fontSize: "15px",
-    color: "#718096",
+    color: "#7c6b99",
     maxWidth: "400px",
     lineHeight: "1.6",
     margin: 0,
@@ -997,7 +1016,7 @@ const styles = {
   modalBackdrop: {
     position: "fixed",
     inset: 0,
-    backgroundColor: "rgba(0,0,0,0.5)",
+    backgroundColor: "rgba(45, 31, 71, 0.5)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -1009,7 +1028,7 @@ const styles = {
     padding: "24px",
     width: "100%",
     maxWidth: "420px",
-    boxShadow: "0 15px 40px rgba(0,0,0,0.2)",
+    boxShadow: "0 15px 40px rgba(107, 53, 214, 0.25)",
   },
   modalGroup: { marginBottom: "14px", textAlign: "left" },
   modalLabel: {
@@ -1017,13 +1036,13 @@ const styles = {
     fontSize: "13px",
     fontWeight: "600",
     marginBottom: "6px",
-    color: "#2d3748",
+    color: "#2d1f47",
   },
   modalInput: {
     width: "100%",
     padding: "10px 12px",
     borderRadius: "12px",
-    border: "1px solid #e2e8f0",
+    border: "1px solid #e6d9ff",
     fontSize: "14px",
     boxSizing: "border-box",
   },
@@ -1031,18 +1050,18 @@ const styles = {
     flex: 1,
     padding: "11px",
     borderRadius: "12px",
-    border: "1px solid #cbd5e0",
+    border: "1px solid #e6d9ff",
     background: "#fff",
     cursor: "pointer",
     fontWeight: "bold",
-    color: "#718096",
+    color: "#7c6b99",
   },
   modalSubmitBtn: {
     flex: 1,
     padding: "11px",
     borderRadius: "12px",
     border: "none",
-    background: "#ff4d6d",
+    background: "linear-gradient(135deg, #a770ef 0%, #cf8bf3 100%)",
     cursor: "pointer",
     fontWeight: "bold",
     color: "#fff",

@@ -1,6 +1,8 @@
 import React, { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useApp, DEFAULT_AVATAR } from "./AppContext";
+import { doc, setDoc } from "firebase/firestore";
+import { db } from "./firebase";
 
 const POPULAR_HOBBIES = [
   "☕ Cafe & Tâm sự",
@@ -13,6 +15,29 @@ const POPULAR_HOBBIES = [
   "🎮 Chơi game",
 ];
 
+const emailToDocId = (email) =>
+  (email || "guest").trim().toLowerCase().replace(/[^a-z0-9]/g, "_");
+
+// Nén ảnh đại diện khi chọn từ máy để lưu mượt lên Firebase
+const compressAvatar = (file, maxWidth = 320) =>
+  new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const scale = Math.min(1, maxWidth / img.width);
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", 0.8));
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+
 function EditProfile() {
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
@@ -22,6 +47,7 @@ function EditProfile() {
   const [age, setAge] = useState(currentUser.age || "");
   const [location, setLocation] = useState(currentUser.location || "");
   const [description, setDescription] = useState(currentUser.description || "");
+  const [saving, setSaving] = useState(false);
 
   const initialHobbies = Array.isArray(currentUser.hobbies)
     ? currentUser.hobbies
@@ -34,12 +60,11 @@ function EditProfile() {
     currentUser.avatar || DEFAULT_AVATAR
   );
 
-  const handleImageChange = (e) => {
+  const handleImageChange = async (e) => {
     const file = e.target.files[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => setAvatarPreview(reader.result);
-      reader.readAsDataURL(file);
+      const compressed = await compressAvatar(file, 320);
+      setAvatarPreview(compressed);
     }
   };
 
@@ -61,30 +86,53 @@ function EditProfile() {
     }
   };
 
-  const handleSave = (e) => {
+  const handleSave = async (e) => {
     e.preventDefault();
     if (!name.trim() || !age || !location.trim()) {
       alert("Vui lòng điền đầy đủ Tên, Tuổi và Nơi ở!");
       return;
     }
 
-    setCurrentUser((prev) => ({
-      ...prev,
+    setSaving(true);
+    const updatedFields = {
       name: name.trim(),
       age: Number(age),
       location: location.trim(),
       hobbies: selectedHobbies,
       description: description.trim(),
       avatar: avatarPreview,
+    };
+
+    setCurrentUser((prev) => ({
+      ...prev,
+      ...updatedFields,
     }));
 
+    // Đồng bộ hồ sơ mới lên Firebase Firestore để người khác thấy ngay
+    if (currentUser.email) {
+      try {
+        await setDoc(
+          doc(db, "users", emailToDocId(currentUser.email)),
+          {
+            ...updatedFields,
+            bio: description.trim(),
+            email: currentUser.email.trim().toLowerCase(),
+          },
+          { merge: true }
+        );
+      } catch (err) {
+        console.error("Lỗi đồng bộ hồ sơ lên Firebase:", err);
+      }
+    }
+
+    setSaving(false);
     navigate("/profile");
   };
 
   return (
     <div style={styles.page}>
       <div style={styles.container}>
-        <h1 style={styles.logo}>💕 LoveMatch</h1>
+        <h1 style={styles.logo}>💜 LoveMatch</h1>
         <p style={styles.title}>Cập nhật hồ sơ để tìm cạ cứng hợp gu</p>
 
         <div style={styles.card}>
@@ -95,10 +143,17 @@ function EditProfile() {
                 type="button"
                 style={styles.cameraBadge}
                 onClick={() => fileInputRef.current?.click()}
+                title="Đổi ảnh đại diện từ máy"
               >
                 📷
               </button>
             </div>
+            <span
+              style={styles.changePhotoHint}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              Bấm để chọn ảnh đại diện từ máy
+            </span>
             <input
               type="file"
               ref={fileInputRef}
@@ -190,8 +245,8 @@ function EditProfile() {
               >
                 Hủy bỏ
               </button>
-              <button type="submit" style={styles.saveButton}>
-                ❤️ Lưu thay đổi
+              <button type="submit" style={styles.saveButton} disabled={saving}>
+                {saving ? "Đang lưu..." : "💜 Lưu thay đổi"}
               </button>
             </div>
           </form>
@@ -207,26 +262,25 @@ const styles = {
     display: "flex",
     justifyContent: "center",
     alignItems: "center",
-    background:
-      "linear-gradient(135deg, #ffe6f0 0%, #fff0f5 50%, #fce4ec 100%)",
-    padding: "20px 15px",
+    background: "linear-gradient(135deg, #f3ebff 0%, #fcf8ff 100%)",
+    padding: "24px 15px",
     fontFamily:
-      "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+      "Quicksand, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
   },
   container: { width: "100%", maxWidth: "520px", textAlign: "center" },
   logo: {
     fontSize: "32px",
-    color: "#ff4d6d",
+    color: "#7b3fe4",
     fontWeight: "bold",
     margin: "0 0 4px",
   },
-  title: { color: "#666", fontSize: "15px", marginBottom: "20px" },
+  title: { color: "#7c6b99", fontSize: "15px", marginBottom: "20px" },
   card: {
     backgroundColor: "#ffffff",
-    borderRadius: "24px",
+    borderRadius: "26px",
     padding: "28px 24px",
-    boxShadow: "0 12px 35px rgba(255, 77, 109, 0.12)",
-    border: "1px solid #ffe1e9",
+    boxShadow: "0 12px 35px rgba(157, 101, 255, 0.14)",
+    border: "1px solid #e6d9ff",
   },
   avatarSection: {
     display: "flex",
@@ -240,17 +294,29 @@ const styles = {
     height: "120px",
     objectFit: "cover",
     borderRadius: "50%",
-    border: "4px solid #ff4d6d",
+    border: "4px solid #a770ef",
+    boxShadow: "0 6px 18px rgba(167, 112, 239, 0.25)",
   },
   cameraBadge: {
     position: "absolute",
     bottom: "4px",
     right: "4px",
-    backgroundColor: "#ff4d6d",
+    backgroundColor: "#7b3fe4",
+    color: "#ffffff",
     border: "2px solid #ffffff",
     borderRadius: "50%",
-    width: "34px",
-    height: "34px",
+    width: "36px",
+    height: "36px",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  changePhotoHint: {
+    marginTop: "8px",
+    fontSize: "13px",
+    color: "#7b3fe4",
+    fontWeight: "600",
     cursor: "pointer",
   },
   row: { display: "flex", gap: "12px" },
@@ -258,16 +324,18 @@ const styles = {
   label: {
     display: "block",
     marginBottom: "6px",
-    color: "#2d3748",
-    fontWeight: "600",
+    color: "#2d1f47",
+    fontWeight: "700",
     fontSize: "14px",
   },
   input: {
     width: "100%",
     boxSizing: "border-box",
     padding: "11px 14px",
-    border: "1px solid #e2e8f0",
-    borderRadius: "12px",
+    border: "1px solid #e6d9ff",
+    backgroundColor: "#faf7ff",
+    color: "#2d1f47",
+    borderRadius: "14px",
     fontSize: "14px",
     outline: "none",
   },
@@ -276,8 +344,10 @@ const styles = {
     minHeight: "90px",
     boxSizing: "border-box",
     padding: "11px 14px",
-    border: "1px solid #e2e8f0",
-    borderRadius: "12px",
+    border: "1px solid #e6d9ff",
+    backgroundColor: "#faf7ff",
+    color: "#2d1f47",
+    borderRadius: "14px",
     fontSize: "14px",
     outline: "none",
     resize: "vertical",
@@ -285,28 +355,29 @@ const styles = {
   },
   hobbyContainer: { display: "flex", flexWrap: "wrap", gap: "8px" },
   hobbyChip: {
-    border: "1px solid #cbd5e0",
-    backgroundColor: "#f7fafc",
-    color: "#4a5568",
-    padding: "6px 12px",
+    border: "1px solid #e6d9ff",
+    backgroundColor: "#faf7ff",
+    color: "#7c6b99",
+    padding: "6px 13px",
     borderRadius: "16px",
     fontSize: "13px",
+    fontWeight: "600",
     cursor: "pointer",
   },
   hobbyChipActive: {
-    backgroundColor: "#ffe6f0",
-    borderColor: "#ff4d6d",
-    color: "#ff4d6d",
-    fontWeight: "600",
+    backgroundColor: "#f2ebff",
+    borderColor: "#9d65ff",
+    color: "#7b3fe4",
+    fontWeight: "700",
   },
   buttons: { display: "flex", gap: "12px", marginTop: "24px" },
   cancelButton: {
     flex: 1,
     padding: "12px",
-    border: "1px solid #cbd5e0",
-    borderRadius: "12px",
+    border: "1px solid #e6d9ff",
+    borderRadius: "16px",
     backgroundColor: "#ffffff",
-    color: "#718096",
+    color: "#7c6b99",
     fontWeight: "bold",
     cursor: "pointer",
   },
@@ -314,11 +385,13 @@ const styles = {
     flex: 1,
     padding: "12px",
     border: "none",
-    borderRadius: "12px",
-    backgroundColor: "#ff4d6d",
+    borderRadius: "16px",
+    background:
+      "linear-gradient(135deg, #a770ef 0%, #cf8bf3 60%, #e0b0ff 100%)",
     color: "#ffffff",
     fontWeight: "bold",
     cursor: "pointer",
+    boxShadow: "0 4px 14px rgba(157, 101, 255, 0.28)",
   },
 };
 
