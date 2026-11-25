@@ -1,21 +1,37 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useApp, DEFAULT_AVATAR, VIETNAM_PROVINCES } from "./AppContext";
+import {
+  collection,
+  doc,
+  setDoc,
+  updateDoc,
+  onSnapshot,
+  arrayUnion,
+  arrayRemove,
+} from "firebase/firestore";
+import { db } from "./firebase";
+
+const emailToDocId = (email) =>
+  (email || "guest").trim().toLowerCase().replace(/[^a-z0-9]/g, "_");
 
 function MatchList() {
   const navigate = useNavigate();
   const {
+    currentUser,
     friends,
     addFriend,
     removeFriend,
-    resetDefaultFriends,
     isFriend,
-    matches,
-    removeMatch,
     discoverProfiles,
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState("friends"); // 'friends' | 'discover' | 'matches'
+  const myEmail = (currentUser?.email || "").trim().toLowerCase();
+  const myDocId = emailToDocId(myEmail);
+
+  const [activeTab, setActiveTab] = useState("requests"); // 'requests' | 'friends' | 'discover'
+  const [incomingRequests, setIncomingRequests] = useState([]);
+  const [firebaseUsers, setFirebaseUsers] = useState([]);
   const [searchFriend, setSearchFriend] = useState("");
   const [selectedProvince, setSelectedProvince] = useState("Tất cả khu vực");
   const [toastMsg, setToastMsg] = useState("");
@@ -25,13 +41,132 @@ function MatchList() {
     setTimeout(() => setToastMsg(""), 2500);
   };
 
-  // Chọn nguồn dữ liệu theo tab đang mở
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, "users"), (snapshot) => {
+      const all = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const me = all.find((u) => (u.email || "").toLowerCase() === myEmail);
+      if (me) {
+        const reqs = Array.isArray(me.friendRequests) ? me.friendRequests : [];
+        setIncomingRequests(reqs);
+        if (reqs.length === 0 && activeTab === "requests") {
+          setActiveTab("friends");
+        }
+      }
+      setFirebaseUsers(
+        all.filter((u) => u.email && u.email.toLowerCase() !== myEmail)
+      );
+    });
+    return () => unsub();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myEmail]);
+
+  const handleAcceptRequest = async (reqItem) => {
+    const senderEmail = (reqItem.email || "").trim().toLowerCase();
+    if (!senderEmail) return;
+
+    try {
+      await updateDoc(doc(db, "users", myDocId), {
+        friendRequests: arrayRemove(reqItem),
+        friends: arrayUnion(senderEmail),
+      });
+      await setDoc(
+        doc(db, "users", emailToDocId(senderEmail)),
+        { friends: arrayUnion(myEmail) },
+        { merge: true }
+      );
+      addFriend({
+        id: senderEmail,
+        email: senderEmail,
+        name: reqItem.name,
+        avatar: reqItem.avatar || DEFAULT_AVATAR,
+        age: reqItem.age || 21,
+        location: reqItem.location || "Việt Nam",
+        isOnline: true,
+      });
+      showToast(`💜 Bạn và ${reqItem.name} đã trở thành bạn bè!`);
+    } catch (err) {
+      console.error("Lỗi chấp nhận kết bạn:", err);
+    }
+  };
+
+  const handleIgnoreRequest = async (reqItem) => {
+    try {
+      await updateDoc(doc(db, "users", myDocId), {
+        friendRequests: arrayRemove(reqItem),
+      });
+      showToast(`Đã bỏ qua lời mời kết bạn từ ${reqItem.name}.`);
+    } catch (err) {
+      console.error("Lỗi bỏ qua lời mời:", err);
+    }
+  };
+
+  const handleSendRequest = async (person) => {
+    const targetEmail = (person.email || "").trim().toLowerCase();
+    if (!targetEmail) return;
+
+    const reqPayload = {
+      email: myEmail,
+      name: currentUser.name,
+      avatar: currentUser.avatar || DEFAULT_AVATAR,
+      age: currentUser.age || 21,
+      location: currentUser.location || "Việt Nam",
+      sentAt: new Date().toLocaleTimeString("vi-VN", {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    };
+
+    try {
+      await setDoc(
+        doc(db, "users", emailToDocId(targetEmail)),
+        {
+          email: targetEmail,
+          name: person.name,
+          avatar: person.avatar || person.image || DEFAULT_AVATAR,
+          friendRequests: arrayUnion(reqPayload),
+        },
+        { merge: true }
+      );
+      showToast(`💌 Đã gửi lời mời kết bạn tới ${person.name}!`);
+    } catch (err) {
+      console.error("Lỗi gửi lời mời:", err);
+    }
+  };
+
+  const handleRemoveFriendBoth = async (person) => {
+    const targetEmail = (person.email || String(person.id)).toLowerCase();
+    if (!window.confirm(`Xóa ${person.name} khỏi danh sách bạn bè?`)) return;
+
+    removeFriend(person.id);
+    removeFriend(targetEmail);
+    try {
+      await updateDoc(doc(db, "users", myDocId), {
+        friends: arrayRemove(targetEmail),
+      });
+      await updateDoc(doc(db, "users", emailToDocId(targetEmail)), {
+        friends: arrayRemove(myEmail),
+      });
+    } catch (err) {
+      console.error("Lỗi xóa bạn:", err);
+    }
+    showToast(`🗑️ Đã xóa ${person.name} khỏi danh sách bạn bè.`);
+  };
+
+  const allDiscoverList = React.useMemo(() => {
+    const map = new Map();
+    [...firebaseUsers, ...discoverProfiles].forEach((p) => {
+      const key = (p.email || String(p.id)).toLowerCase();
+      if (key !== myEmail) map.set(key, p);
+    });
+    return Array.from(map.values());
+  }, [firebaseUsers, discoverProfiles, myEmail]);
+
   const sourceList =
-    activeTab === "friends"
+    activeTab === "requests"
+      ? incomingRequests
+      : activeTab === "friends"
       ? friends
-      : activeTab === "discover"
-      ? discoverProfiles
-      : matches;
+      : allDiscoverList;
 
   const filteredList = sourceList.filter((person) => {
     const matchProv =
@@ -39,32 +174,13 @@ function MatchList() {
       (person.location || "")
         .toLowerCase()
         .includes(selectedProvince.toLowerCase());
-
     const q = searchFriend.trim().toLowerCase();
     const matchName =
       !q ||
-      person.name.toLowerCase().includes(q) ||
-      (person.location || "").toLowerCase().includes(q) ||
-      (person.hobbies || []).some((h) => h.toLowerCase().includes(q));
-
+      (person.name || "").toLowerCase().includes(q) ||
+      (person.location || "").toLowerCase().includes(q);
     return matchProv && matchName;
   });
-
-  const handleAddFriend = (person) => {
-    addFriend(person);
-    showToast(`✅ Đã thêm ${person.name} vào danh sách bạn bè!`);
-  };
-
-  const handleRemoveFriend = (person) => {
-    if (
-      window.confirm(
-        `Bạn có chắc chắn muốn xóa ${person.name} khỏi danh sách bạn bè?`
-      )
-    ) {
-      removeFriend(person.id);
-      showToast(`🗑️ Đã xóa ${person.name} khỏi danh sách bạn bè.`);
-    }
-  };
 
   return (
     <div style={styles.page}>
@@ -72,17 +188,25 @@ function MatchList() {
 
       <header style={styles.header}>
         <button style={styles.backBtn} onClick={() => navigate("/home")}>
-          ← Khám phá
+          ← Bảng tin
         </button>
-        <h2 style={styles.logo}>👥 Bạn bè & Kết nối</h2>
+        <h2 style={styles.logo}>👥 Bạn bè & Lời mời kết bạn</h2>
         <button style={styles.backBtn} onClick={() => navigate("/chat")}>
           💬 Chat
         </button>
       </header>
 
       <div style={styles.container}>
-        {/* CÁC TAB CHUYỂN ĐỔI */}
         <div style={styles.tabsRow}>
+          <button
+            style={{
+              ...styles.tabBtn,
+              ...(activeTab === "requests" ? styles.tabBtnActive : {}),
+            }}
+            onClick={() => setActiveTab("requests")}
+          >
+            🔔 Lời mời kết bạn ({incomingRequests.length})
+          </button>
           <button
             style={{
               ...styles.tabBtn,
@@ -90,7 +214,7 @@ function MatchList() {
             }}
             onClick={() => setActiveTab("friends")}
           >
-            👥 Danh sách bạn bè ({friends.length})
+            💜 Bạn bè ({friends.length})
           </button>
           <button
             style={{
@@ -99,38 +223,20 @@ function MatchList() {
             }}
             onClick={() => setActiveTab("discover")}
           >
-            ➕ Thêm bạn mới ({discoverProfiles.length})
-          </button>
-          <button
-            style={{
-              ...styles.tabBtn,
-              ...(activeTab === "matches" ? styles.tabBtnActive : {}),
-            }}
-            onClick={() => setActiveTab("matches")}
-          >
-            💕 Đã tương hợp ({matches.length})
+            ➕ Tìm thêm bạn ({allDiscoverList.length})
           </button>
         </div>
 
-        {/* THANH TÌM KIẾM, LỌC KHU VỰC & NẠP DỮ LIỆU MẪU */}
         <div style={styles.filterCard}>
           <div style={styles.searchBox}>
             <span>🔍</span>
             <input
               type="text"
-              placeholder="Tìm bạn bè theo tên, sở thích..."
+              placeholder="Tìm theo tên hoặc khu vực..."
               value={searchFriend}
               onChange={(e) => setSearchFriend(e.target.value)}
               style={styles.searchInput}
             />
-            {searchFriend && (
-              <button
-                style={styles.clearBtn}
-                onClick={() => setSearchFriend("")}
-              >
-                ✖
-              </button>
-            )}
           </div>
 
           <select
@@ -144,101 +250,82 @@ function MatchList() {
               </option>
             ))}
           </select>
-
-          <button
-            type="button"
-            onClick={() => {
-              resetDefaultFriends();
-              showToast("🔄 Đã tải lại danh sách 11 bạn bè mẫu!");
-            }}
-            style={styles.reloadSampleBtn}
-            title="Khôi phục danh sách 11 bạn bè mẫu"
-          >
-            🔄 Nạp 11 bạn mẫu
-          </button>
         </div>
 
-        {/* DANH SÁCH THẺ */}
         {filteredList.length === 0 ? (
           <div style={styles.emptyBox}>
-            <div style={{ fontSize: "50px", marginBottom: "12px" }}>👥</div>
+            <div style={{ fontSize: "48px", marginBottom: "10px" }}>💜</div>
             <h3>
-              {activeTab === "friends"
-                ? "Danh sách bạn bè đang trống"
-                : "Không tìm thấy người dùng phù hợp"}
+              {activeTab === "requests"
+                ? "Hiện chưa có lời mời kết bạn nào gửi tới bạn"
+                : "Danh sách đang trống"}
             </h3>
-            <p style={{ color: "#718096", marginBottom: "20px" }}>
-              {activeTab === "friends"
-                ? 'Chuyển sang tab "Thêm bạn mới" để tìm kiếm và kết bạn nhé!'
-                : "Thử đổi từ khóa tìm kiếm hoặc chọn tỉnh/thành phố khác."}
+            <p style={{ color: "#7c6b99" }}>
+              Bạn có thể chuyển sang tab "Tìm thêm bạn" để gửi lời mời kết bạn
+              tới mọi người nhé!
             </p>
-            <div
-              style={{ display: "flex", gap: "10px", justifyContent: "center" }}
-            >
-              {(searchFriend || selectedProvince !== "Tất cả khu vực") && (
-                <button
-                  style={styles.resetBtn}
-                  onClick={() => {
-                    setSearchFriend("");
-                    setSelectedProvince("Tất cả khu vực");
-                  }}
-                >
-                  Đặt lại bộ lọc
-                </button>
-              )}
-              {activeTab === "friends" && (
-                <button
-                  style={styles.exploreBtn}
-                  onClick={() => setActiveTab("discover")}
-                >
-                  ➕ Thêm bạn mới ngay
-                </button>
-              )}
-            </div>
           </div>
         ) : (
           <div style={styles.grid}>
             {filteredList.map((person) => {
-              const alreadyFriend = isFriend(person.id);
+              const pEmail = (person.email || "").toLowerCase();
+              const alreadyFriend = isFriend(pEmail) || isFriend(person.id);
+              const alreadySent =
+                Array.isArray(person.friendRequests) &&
+                person.friendRequests.some(
+                  (r) => (r.email || "").toLowerCase() === myEmail
+                );
 
               return (
-                <div key={person.id} style={styles.card}>
+                <div key={pEmail || person.id} style={styles.card}>
                   <img
                     src={person.avatar || person.image || DEFAULT_AVATAR}
                     alt={person.name}
                     style={styles.avatar}
                   />
                   <h3 style={styles.name}>
-                    {person.name}, {person.age}
+                    {person.name}
+                    {person.age ? `, ${person.age}` : ""}
                   </h3>
                   <p style={styles.location}>
-                    📍 Tỉnh/TP: {person.location || "Việt Nam"} •{" "}
-                    {person.distance || "1.5 km"}
-                  </p>
-                  <p style={styles.matchedAt}>
-                    {activeTab === "friends"
-                      ? `Kết bạn: ${person.addedAt || "Gần đây"}`
-                      : person.bio
-                      ? person.bio.slice(0, 48) + "..."
-                      : ""}
+                    📍 {person.location || "Việt Nam"}
                   </p>
 
-                  {/* HÀNH ĐỘNG THEO TỪNG TAB */}
                   <div style={styles.actions}>
+                    {activeTab === "requests" && (
+                      <>
+                        <button
+                          style={styles.acceptBtn}
+                          onClick={() => handleAcceptRequest(person)}
+                        >
+                          ✓ Chấp nhận
+                        </button>
+                        <button
+                          style={styles.deleteFriendBtn}
+                          onClick={() => handleIgnoreRequest(person)}
+                        >
+                          ✕ Bỏ qua
+                        </button>
+                      </>
+                    )}
+
                     {activeTab === "friends" && (
                       <>
                         <button
                           style={styles.chatBtn}
                           onClick={() =>
-                            navigate(`/chat/${person.email || person.id}`)
+                            navigate(
+                              `/chat/${encodeURIComponent(
+                                person.email || person.id
+                              )}`
+                            )
                           }
                         >
                           💬 Nhắn tin
                         </button>
                         <button
                           style={styles.deleteFriendBtn}
-                          onClick={() => handleRemoveFriend(person)}
-                          title="Xóa bạn bè"
+                          onClick={() => handleRemoveFriendBoth(person)}
                         >
                           🗑️ Xóa bạn
                         </button>
@@ -250,63 +337,22 @@ function MatchList() {
                         {alreadyFriend ? (
                           <button
                             style={styles.deleteFriendBtn}
-                            onClick={() => handleRemoveFriend(person)}
+                            onClick={() => handleRemoveFriendBoth(person)}
                           >
-                            🗑️ Xóa bạn
+                            ✓ Bạn bè (Xóa)
+                          </button>
+                        ) : alreadySent ? (
+                          <button style={styles.sentBtn} disabled>
+                            ⏳ Đã gửi lời mời
                           </button>
                         ) : (
                           <button
-                            style={styles.addFriendBtn}
-                            onClick={() => handleAddFriend(person)}
-                          >
-                            ➕ Thêm bạn bè
-                          </button>
-                        )}
-                      </>
-                    )}
-
-                    {activeTab === "matches" && (
-                      <>
-                        <button
-                          style={styles.chatBtn}
-                          onClick={() =>
-                            navigate(`/chat/${person.email || person.id}`)
-                          }
-                        >
-                          💬 Chat
-                        </button>
-                        {!alreadyFriend ? (
-                          <button
-                            style={styles.addFriendBtn}
-                            onClick={() => handleAddFriend(person)}
-                            title="Thêm vào bạn bè"
+                            style={styles.acceptBtn}
+                            onClick={() => handleSendRequest(person)}
                           >
                             ➕ Kết bạn
                           </button>
-                        ) : (
-                          <button
-                            style={styles.deleteFriendBtn}
-                            onClick={() => handleRemoveFriend(person)}
-                            title="Xóa bạn bè"
-                          >
-                            🗑️ Xóa bạn
-                          </button>
                         )}
-                        <button
-                          style={styles.unmatchBtn}
-                          onClick={() => {
-                            if (
-                              window.confirm(
-                                `Hủy tương hợp với ${person.name}?`
-                              )
-                            ) {
-                              removeMatch(person.id);
-                            }
-                          }}
-                          title="Hủy tương hợp"
-                        >
-                          ✖
-                        </button>
                       </>
                     )}
                   </div>
@@ -323,27 +369,25 @@ function MatchList() {
 const styles = {
   page: {
     minHeight: "100vh",
-    background:
-      "linear-gradient(135deg, #ffe6f0 0%, #fff0f5 50%, #fce4ec 100%)",
-    fontFamily:
-      "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+    background: "linear-gradient(135deg, #f3ebff 0%, #fcf8ff 100%)",
+    fontFamily: "Quicksand, -apple-system, sans-serif",
   },
   toast: {
     position: "fixed",
     top: "80px",
     right: "24px",
-    backgroundColor: "#2d3748",
+    backgroundColor: "#2d1f47",
     color: "#ffffff",
     padding: "12px 20px",
     borderRadius: "14px",
     fontSize: "14px",
     fontWeight: "600",
-    boxShadow: "0 8px 25px rgba(0,0,0,0.2)",
+    boxShadow: "0 8px 25px rgba(107, 53, 214, 0.25)",
     zIndex: 999,
   },
   header: {
     height: "65px",
-    background: "linear-gradient(135deg, #ff4d6d, #ff758c)",
+    background: "linear-gradient(135deg, #a770ef 0%, #cf8bf3 50%, #fdb99b 100%)",
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
@@ -376,18 +420,18 @@ const styles = {
     minWidth: "180px",
     padding: "12px 16px",
     borderRadius: "16px",
-    border: "1px solid #ffe1e9",
+    border: "1px solid #e6d9ff",
     backgroundColor: "#ffffff",
-    color: "#718096",
+    color: "#7c6b99",
     fontWeight: "bold",
     fontSize: "14px",
     cursor: "pointer",
   },
   tabBtnActive: {
-    backgroundColor: "#ff4d6d",
+    background: "linear-gradient(135deg, #a770ef, #cf8bf3)",
     color: "#ffffff",
-    borderColor: "#ff4d6d",
-    boxShadow: "0 6px 18px rgba(255, 77, 109, 0.25)",
+    borderColor: "transparent",
+    boxShadow: "0 6px 18px rgba(157, 101, 255, 0.25)",
   },
   filterCard: {
     display: "flex",
@@ -395,8 +439,7 @@ const styles = {
     backgroundColor: "#ffffff",
     padding: "14px 18px",
     borderRadius: "20px",
-    boxShadow: "0 6px 20px rgba(255, 77, 109, 0.08)",
-    border: "1px solid #ffe1e9",
+    border: "1px solid #e6d9ff",
     marginBottom: "24px",
     flexWrap: "wrap",
   },
@@ -406,8 +449,7 @@ const styles = {
     gap: "8px",
     flex: 1,
     minWidth: "220px",
-    backgroundColor: "#fff9fa",
-    border: "1px solid #ffccd5",
+    backgroundColor: "#f2ebff",
     borderRadius: "14px",
     padding: "8px 14px",
   },
@@ -417,33 +459,17 @@ const styles = {
     background: "transparent",
     fontSize: "14px",
     width: "100%",
-    color: "#2d3748",
-  },
-  clearBtn: {
-    border: "none",
-    background: "transparent",
-    color: "#a0aec0",
-    cursor: "pointer",
+    color: "#2d1f47",
   },
   provinceSelect: {
     padding: "10px 16px",
     borderRadius: "14px",
-    border: "1px solid #ffccd5",
-    backgroundColor: "#fff0f5",
-    color: "#ff4d6d",
+    border: "1px solid #e6d9ff",
+    backgroundColor: "#f2ebff",
+    color: "#6b35d6",
     fontWeight: "600",
     fontSize: "14px",
     outline: "none",
-    cursor: "pointer",
-  },
-  reloadSampleBtn: {
-    padding: "10px 14px",
-    borderRadius: "14px",
-    border: "1px solid #cbd5e0",
-    backgroundColor: "#f7fafc",
-    color: "#4a5568",
-    fontWeight: "600",
-    fontSize: "13px",
     cursor: "pointer",
   },
   emptyBox: {
@@ -451,25 +477,7 @@ const styles = {
     borderRadius: "24px",
     padding: "48px 24px",
     textAlign: "center",
-    boxShadow: "0 10px 30px rgba(255, 77, 109, 0.1)",
-  },
-  resetBtn: {
-    border: "1px solid #ff4d6d",
-    backgroundColor: "#fff0f5",
-    color: "#ff4d6d",
-    padding: "12px 20px",
-    borderRadius: "20px",
-    fontWeight: "bold",
-    cursor: "pointer",
-  },
-  exploreBtn: {
-    border: "none",
-    backgroundColor: "#ff4d6d",
-    color: "white",
-    padding: "12px 24px",
-    borderRadius: "20px",
-    fontWeight: "bold",
-    cursor: "pointer",
+    border: "1px solid #e6d9ff",
   },
   grid: {
     display: "grid",
@@ -481,30 +489,35 @@ const styles = {
     borderRadius: "22px",
     padding: "20px",
     textAlign: "center",
-    boxShadow: "0 8px 25px rgba(255, 77, 109, 0.1)",
-    border: "1px solid #ffe1e9",
+    boxShadow: "0 8px 25px rgba(157, 101, 255, 0.1)",
+    border: "1px solid #e6d9ff",
   },
   avatar: {
-    width: "96px",
-    height: "96px",
+    width: "92px",
+    height: "92px",
     borderRadius: "50%",
     objectFit: "cover",
-    border: "3px solid #ff4d6d",
+    border: "3px solid #a770ef",
     marginBottom: "12px",
   },
-  name: { margin: "0 0 4px", fontSize: "18px", color: "#2d3748" },
-  location: { margin: "0 0 6px", fontSize: "13px", color: "#718096" },
-  matchedAt: {
-    margin: "0 0 16px",
-    fontSize: "12px",
-    color: "#a0aec0",
-    minHeight: "18px",
-  },
+  name: { margin: "0 0 4px", fontSize: "18px", color: "#2d1f47" },
+  location: { margin: "0 0 14px", fontSize: "13px", color: "#7c6b99" },
   actions: { display: "flex", gap: "8px", justifyContent: "center" },
+  acceptBtn: {
+    flex: 1,
+    border: "none",
+    background: "linear-gradient(135deg, #a770ef, #cf8bf3)",
+    color: "white",
+    padding: "10px 12px",
+    borderRadius: "12px",
+    fontWeight: "bold",
+    fontSize: "13px",
+    cursor: "pointer",
+  },
   chatBtn: {
     flex: 1,
     border: "none",
-    backgroundColor: "#ff4d6d",
+    background: "linear-gradient(135deg, #a770ef, #cf8bf3)",
     color: "white",
     padding: "10px 12px",
     borderRadius: "12px",
@@ -512,31 +525,21 @@ const styles = {
     fontSize: "13px",
     cursor: "pointer",
   },
-  addFriendBtn: {
+  sentBtn: {
     flex: 1,
-    border: "none",
-    backgroundColor: "#38a169",
-    color: "white",
+    border: "1px solid #e6d9ff",
+    backgroundColor: "#f2ebff",
+    color: "#6b35d6",
     padding: "10px 12px",
     borderRadius: "12px",
     fontWeight: "bold",
     fontSize: "13px",
-    cursor: "pointer",
   },
   deleteFriendBtn: {
-    border: "1px solid #fed7d7",
-    backgroundColor: "#fff5f5",
-    color: "#e53e3e",
-    padding: "10px 12px",
-    borderRadius: "12px",
-    cursor: "pointer",
-    fontWeight: "bold",
-    fontSize: "13px",
-  },
-  unmatchBtn: {
-    border: "1px solid #e2e8f0",
-    backgroundColor: "#f7fafc",
-    color: "#718096",
+    flex: 1,
+    border: "1px solid #ffd1e0",
+    backgroundColor: "#fff0f5",
+    color: "#e03e70",
     padding: "10px 12px",
     borderRadius: "12px",
     cursor: "pointer",
